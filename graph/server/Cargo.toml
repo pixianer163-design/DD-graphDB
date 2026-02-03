@@ -1,0 +1,29 @@
+[package]
+name = "graph-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+graph-core = { path = "../core" }
+graph-query = { path = "../query" }
+graph-collection = { path = "../collection" }
+graph-storage = { path = "../storage" }
+graph-algorithms = { path = "../algorithms" }
+tonic = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
+tokio = { workspace = true }
+serde = { workspace = true, optional = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+[features]
+default = ["async"]
+async = ["futures", "graph-storage/async"]
+grpc = ["tonic", "prost"]
+streaming = ["graph-algorithms/streaming"]
+serde = ["graph-core/serde", "graph-query/serde", "graph-storage/serde", "dep:serde"]

@@ -1,0 +1,42 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+// Basic tokens
+IDENTIFIER = { ASCII_ALPHANUMERIC+ }
+STRING = { "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+NUMBER = { ASCII_DIGIT+ ("." ASCII_DIGIT+)? }
+BOOLEAN = { "true" | "false" }
+
+// Properties
+property_map = "{" ~ (property ~ ("," ~ property)*)? ~ "}"
+property = IDENTIFIER ":" ~ value
+value = _{ STRING | NUMBER | BOOLEAN | property_map }
+
+// Node and Edge patterns
+node = "(" ~ (IDENTIFIER)? (":" IDENTIFIER)? property_map? ~ ")"
+edge = "-" ~ "[" ~ (IDENTIFIER)? (":" IDENTIFIER)? property_map? ~ "]" ~ ("-" | "->")
+pattern = node ~ (edge ~ node)*
+
+// Expressions
+expression = { 
+    comparison ~ ("AND" ~ expression)* | 
+    comparison ~ ("OR" ~ expression)*
+}
+comparison = operand ~ (">" | "<" | "=" | "!=") ~ operand
+operand = _{ IDENTIFIER "." IDENTIFIER | value }
+
+// Clauses
+match_clause = "MATCH" ~ pattern
+where_clause = "WHERE" ~ expression
+return_clause = "RETURN" ~ return_item ~ ("," ~ return_item)*
+create_clause = "CREATE" ~ pattern
+delete_clause = "DELETE" ~ IDENTIFIER
+
+return_item = _{ IDENTIFIER | IDENTIFIER "." IDENTIFIER }
+
+// Query structure
+query = { 
+    match_clause ~ where_clause? ~ return_clause |
+    create_clause |
+    delete_clause |
+    match_clause ~ where_clause? ~ delete_clause
+}

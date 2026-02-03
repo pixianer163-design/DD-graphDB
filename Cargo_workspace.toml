@@ -1,0 +1,72 @@
+[workspace]
+resolver = "2"
+members = [
+    "graph/core",
+    "graph/storage", 
+    "graph/collection",
+    "graph/query",
+    "graph/algorithms",
+    "graph/server"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Graph Database Team"]
+license = "MIT"
+repository = "https://github.com/example/graph-database"
+
+[workspace.dependencies]
+# External dependencies
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+thiserror = "1.0"
+anyhow = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Dataflow processing
+timely = { version = "0.25" }
+differential-dataflow = { version = "0.18" }
+
+# gRPC support  
+tonic = { version = "0.10", features = ["transport"] }
+prost = { version = "0.12" }
+
+# Serialization support
+bincode = { version = "1.3" }
+
+# Async utilities
+futures = { version = "0.3" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+# Enable commonly used features by default
+serde = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[features]
+default = ["core"]
+core = []
+serde = ["dep:serde", "dep:serde_json", "dep:bincode", "graph-core?/serde", "graph-storage?/serde", "graph-collection?/serde", "graph-query?/serde", "graph-algorithms?/serde", "graph-server?/serde"]
+async = ["dep:tokio", "graph-storage?/async", "graph-server?/async"]
+streaming = ["dep:timely", "dep:differential-dataflow", "graph-algorithms?/streaming"]
+grpc = ["dep:tonic", "dep:prost", "graph-server?/grpc"]
+full = ["serde", "async", "streaming", "grpc"]
+
+# Binary-specific features
+bin = ["serde", "async", "tracing", "tracing-subscriber"]
+demo = ["serde"]

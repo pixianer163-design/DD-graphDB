@@ -1,0 +1,21 @@
+[package]
+name = "graph-collection"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+graph-core = { path = "../core" }
+graph-storage = { path = "../storage" }
+timely = { workspace = true, optional = true }
+differential-dataflow = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true, optional = true }
+
+[features]
+default = []
+streaming = ["timely", "differential-dataflow", "graph-storage/streaming"]
+serde = ["graph-core/serde", "graph-storage/serde", "dep:serde"]

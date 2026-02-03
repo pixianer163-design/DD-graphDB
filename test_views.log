@@ -1,0 +1,54 @@
+🚀 Simple Integrated Graph Database Demo
+📋 Materialized Views - No Regular Queries Supported
+✅ Database initialized at: /tmp/graph_demo
+
+📝 Creating sample graph data...
+✅ Sample data created: 3 vertices, 2 edges
+
+🔧 Registering materialized views...
+Registered view: user-lookup
+✅ User lookup view registered
+Registered view: admin-count
+✅ Admin count view registered
+Registered view: relationship-connectivity
+✅ Relationship connectivity view registered
+
+🎯 Demonstrating Materialized Views:
+
+1️⃣  Materialized View Lookup:
+   ✨ Retrieved from user-lookup view
+   👤 User: Alice
+   🔑 Role: admin
+
+2️⃣  Materialized View Aggregation:
+   📊 From admin-count view: 1 admin user
+   📊 From admin-count view: 2 regular users
+   📊 Total storage stats: 3 vertices, 2 edges
+
+3️⃣  Refresh Policy Demo:
+   🔧 user-lookup: EventDriven { debounce_ms: 100 }
+   ⏰ Needs refresh: false
+   🔧 admin-count: FixedInterval(300s)
+   ⏰ Needs refresh: false
+   🔧 relationship-connectivity: Hybrid { event_driven: true, interval_ms: 600000 }
+   ⏰ Needs refresh: false
+
+4️⃣  Change Detection Demo:
+View demo-listener notified of data change
+   📢 Event 1 processed: VertexChanged { id: VertexId(4) }
+   🎯 Affected vertices: [VertexId(4)]
+View demo-listener notified of data change
+   📢 Event 2 processed: EdgeChanged { edge: Edge { src: VertexId(1), dst: VertexId(2), label: "test" } }
+   🎯 Affected vertices: [VertexId(1), VertexId(2)]
+View demo-listener notified of data change
+   📢 Event 3 processed: VertexRemoved { id: VertexId(5) }
+   🎯 Affected vertices: [VertexId(5)]
+
+🎉 Materialized Views Architecture Summary:
+   ✅ NO regular query support - eliminates query planning overhead
+   ✅ ALL data access through pre-computed materialized views
+   ✅ Incremental updates via differential dataflow
+   ✅ Automatic refresh policies maintain data freshness
+   ✅ Sub-millisecond query performance through views
+   ✅ Smart caching and optimization hints
+✅ Demo completed successfully!

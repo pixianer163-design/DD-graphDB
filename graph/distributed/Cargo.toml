@@ -1,0 +1,42 @@
+[package]
+name = "graph-distributed"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Core graph types
+graph-core = { path = "../core" }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# Async runtime and networking
+tokio = { workspace = true, features = ["full"] }
+futures = { workspace = true }
+
+# gRPC support
+tonic = { workspace = true }
+prost = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Hashing and crypto
+sha2 = "0.10"
+rand = "0.8"
+
+# Logging
+tracing = { workspace = true }
+
+# Time utilities
+chrono = { version = "0.4", features = ["serde"] }
+
+# Collections
+indexmap = { workspace = true }
+
+[build-dependencies]
+tonic-build = "0.10"

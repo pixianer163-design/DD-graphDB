@@ -1,0 +1,225 @@
+[workspace]
+resolver = "2"
+members = [
+    "graph/core",
+    "graph/storage",
+    "graph/collection", 
+    "graph/query",
+    "graph/algorithms",
+    "graph/server",
+    "graph/views"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Graph Database Team"]
+license = "MIT"
+repository = "https://github.com/example/graph-database"
+
+[workspace.dependencies]
+# External dependencies
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+thiserror = "1.0"
+anyhow = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Dataflow processing
+timely = { version = "0.25" }
+differential-dataflow = { version = "0.18" }
+
+# gRPC support  
+tonic = { version = "0.10", features = ["transport"] }
+prost = { version = "0.12" }
+
+# Serialization support
+bincode = { version = "1.3" }
+byteorder = { version = "1.5" }
+
+# Async utilities
+futures = { version = "0.3" }
+
+# Parsing
+pest = { version = "2.7" }
+pest_derive = { version = "2.7" }
+
+# Additional utilities
+indexmap = { version = "1.9" }
+rand = { version = "0.8" }
+
+# SQL parsing support
+sqlparser = { version = "0.45" }
+
+# DateTime handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Testing utilities
+tokio-test = { version = "0.4" }
+tempfile = { version = "3.8" }
+
+# Web framework for API examples
+axum = { version = "0.7", features = ["tokio"] }
+tower = { version = "0.4" }
+tower-http = { version = "0.5", features = ["trace"] }
+
+
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[package]
+name = "graph_database"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "graph_database"
+path = "src/main.rs"
+
+[[bin]] 
+name = "graph_demo"
+path = "src/demo.rs"
+
+[[bin]] 
+name = "integrated_demo"
+path = "src/integrated_demo.rs"
+required-features = ["views"]
+
+[[bin]]
+name = "simple_demo"
+path = "src/simple_integrated_demo.rs"
+required-features = ["views"]
+
+[[bin]]
+name = "incremental_demo"
+path = "src/incremental_demo.rs"
+required-features = ["views"]
+
+[[bin]]
+name = "incremental_quick_demo" 
+path = "src/incremental_quick_demo.rs"
+required-features = ["views"]
+
+[[bin]]
+name = "stream_demo"
+path = "src/stream_demo.rs"
+required-features = ["views"]
+
+[[bin]]
+name = "simple_stream_demo"
+path = "src/simple_stream_demo.rs"
+required-features = ["views"]
+
+[[bin]]
+name = "test_sql_view"
+path = "src/test_sql_view.rs"
+required-features = ["views", "sql"]
+
+[[bin]]
+name = "query_demo"
+path = "src/query_demo.rs"
+required-features = ["query"]
+
+[[bin]]
+name = "simple_query_test"
+path = "src/simple_query_test.rs"
+
+[[bin]]
+name = "algo_demo"
+path = "src/algo_demo.rs"
+
+[[bin]]
+name = "social_network_platform"
+path = "src/social_network_platform.rs"
+required-features = ["views", "streaming"]
+
+[[bin]]
+name = "streaming_analytics_demo"
+path = "src/streaming_analytics_demo.rs"
+required-features = ["views", "streaming"]
+
+[[bin]]
+name = "api_service"
+path = "src/api_service.rs"
+required-features = ["views", "streaming"]
+
+[dependencies]
+# Core types
+graph-core = { path = "graph/core" }
+graph-storage = { path = "graph/storage" }
+graph-query = { path = "graph/query" }
+graph-algorithms = { path = "graph/algorithms" }
+graph-views = { path = "graph/views", optional = true }
+
+# Storage support (optional)
+bincode = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+
+# Differential Dataflow support (optional)
+timely = { workspace = true, optional = true }
+differential-dataflow = { workspace = true, optional = true }
+
+# gRPC support (optional)  
+tonic = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
+
+# Serialization support (optional)
+serde_json = { workspace = true, optional = true }
+
+# Async support (required for main binary)
+tokio = { workspace = true }
+
+# Query parsing support
+pest = { workspace = true, optional = true }
+pest_derive = { workspace = true, optional = true }
+
+# Futures support (for streaming and async features)
+futures = { workspace = true, optional = true }
+
+# Tracing and logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Testing utilities
+tempfile = { workspace = true }
+
+# DateTime handling
+chrono = { workspace = true }
+
+# Web framework (optional, for API service example)
+axum = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true }
+
+[features]
+default = ["core"]
+core = []
+serde = ["graph-core/serde", "dep:serde", "graph-storage/serde", "dep:bincode"]
+storage = ["graph-storage/serde", "dep:serde", "dep:bincode"]
+async = ["graph-storage/async", "dep:futures"]
+streaming = ["dep:timely", "dep:differential-dataflow"]
+query = ["dep:pest", "dep:pest_derive"]
+sql = ["graph-views/sql"]
+views = ["serde", "async", "dep:graph-views", "sql"]
+grpc = ["dep:tonic", "dep:prost"]
+full = ["serde", "storage", "async", "streaming", "query", "views", "sql"]
+
+# Binary-specific features
+bin = ["serde", "storage", "async", "views", "sql"]
+demo = ["serde"]

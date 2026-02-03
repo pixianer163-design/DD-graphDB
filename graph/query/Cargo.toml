@@ -1,0 +1,27 @@
+[package]
+name = "graph-query"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+graph-core = { path = "../core" }
+graph-collection = { path = "../collection" }
+graph-storage = { path = "../storage" }
+serde = { workspace = true, optional = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[dependencies.pest]
+version = "2.7"
+optional = true
+
+[dependencies.pest_derive]
+version = "2.7"
+optional = true
+
+[features]
+default = []
+serde = ["graph-core/serde", "graph-collection/serde", "dep:serde"]
+pest = ["dep:pest", "dep:pest_derive"]

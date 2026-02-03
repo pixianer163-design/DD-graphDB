@@ -1,0 +1,32 @@
+[package]
+name = "graph_database"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "graph_database"
+path = "src/main.rs"
+
+[dependencies]
+graph-core = { path = "graph/core" }
+graph-storage = { path = "graph/storage" }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+anyhow = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace]
+members = [
+    "graph/core",
+    "graph/storage"
+]
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+anyhow = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

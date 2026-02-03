@@ -1,0 +1,22 @@
+[package]
+name = "graph-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+graph-core = { path = "../core" }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+bincode = { workspace = true, optional = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util"], optional = true }
+futures = { workspace = true, optional = true }
+
+[features]
+default = []
+async = ["tokio", "futures"]
+serde = ["dep:serde", "dep:serde_json", "dep:bincode", "graph-core/serde"]
+streaming = []  # Placeholder for future streaming features

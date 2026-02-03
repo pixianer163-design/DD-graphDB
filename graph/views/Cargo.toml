@@ -1,0 +1,65 @@
+[package]
+name = "graph-views"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance materialized view system for the graph database"
+
+[dependencies]
+# Core types
+graph-core = { path = "../core" }
+
+# Storage support (optional)
+graph-storage = { path = "../storage" }
+
+# Algorithms support (optional)
+graph-algorithms = { path = "../algorithms", optional = true }
+
+# Server support (optional)
+graph-server = { path = "../server", optional = true }
+
+# Differential Dataflow support (optional)
+timely = { workspace = true, optional = true }
+differential-dataflow = { workspace = true, optional = true }
+
+# Serialization support (optional)
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+bincode = { workspace = true, optional = true }
+
+# Async support (required for basic functionality)
+tokio = { workspace = true, features = ["full"] }
+futures = { workspace = true, optional = true }
+
+# Query parsing support
+pest = { workspace = true, optional = true }
+pest_derive = { workspace = true, optional = true }
+sqlparser = { workspace = true, optional = true }
+
+# gRPC support (optional)
+tonic = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
+
+# System utilities
+num_cpus = { version = "1.16", optional = true }
+chrono = { workspace = true, features = ["serde"] }
+
+# Tracing and logging
+tracing = { workspace = true, optional = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tempfile = { workspace = true }
+
+[features]
+default = ["async", "serde"]
+serde = ["graph-core/serde", "dep:serde", "dep:serde_json", "dep:bincode", "graph-storage/serde"]
+streaming = ["dep:timely", "dep:differential-dataflow", "graph-algorithms/streaming"]
+async = ["dep:futures", "graph-storage/async"]
+query = ["dep:pest", "dep:pest_derive"]
+sql = ["dep:sqlparser"]
+grpc = ["dep:tonic", "dep:prost", "graph-server/grpc"]
+full = ["serde", "async", "streaming", "query", "grpc", "sql"]
