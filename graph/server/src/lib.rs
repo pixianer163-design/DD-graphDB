@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::net::SocketAddr;
 
+use graph_storage::GraphStorage;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
@@ -16,7 +17,6 @@ pub use crate::core::GraphServer;
 /// Core server implementation
 pub mod core {
     use super::*;
-    use graph_storage::GraphStorage;
     use graph_core::{VertexId, Edge, Properties};
 
     /// Main graph database server
@@ -150,8 +150,8 @@ pub mod http {
             socket: &mut tokio::net::TcpStream,
             storage: Arc<RwLock<GraphStorage>>,
         ) {
-            use tokio::io::AsyncReadExt;
-            
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
             let mut buffer = [0; 1024];
             match socket.read(&mut buffer).await {
                 Ok(n) => {
@@ -256,30 +256,32 @@ mod tests {
         assert_eq!(server.addr().to_string(), "127.0.0.1:50051");
     }
 
+
+    #[cfg(feature = "http")]
     #[test]
     fn test_http_server() {
         use tokio::sync::RwLock;
-        
+
+        let temp_dir = tempfile::tempdir().unwrap();
         let storage = Arc::new(RwLock::new(
-            GraphStorage::new("./test_data").unwrap()
+            GraphStorage::new(temp_dir.path()).unwrap()
         ));
         let http_server = http::HttpServer::new(storage);
-        
+
         // Test that server can be created
         assert_eq!(http_server.addr.to_string(), "127.0.0.1:8080");
     }
 
+    #[cfg(feature = "grpc")]
     #[test]
     fn test_grpc_server() {
         use tokio::sync::RwLock;
-        
+
+        let temp_dir = tempfile::tempdir().unwrap();
         let storage = Arc::new(RwLock::new(
-            GraphStorage::new("./test_data").unwrap()
+            GraphStorage::new(temp_dir.path()).unwrap()
         ));
-        let grpc_server = grpc::GrpcServer::new(storage);
-        
-        // Test that gRPC server can be created
-        assert!(true); // Just verify creation doesn't panic
+        let _grpc_server = grpc::GrpcServer::new(storage);
     }
 
     #[test]

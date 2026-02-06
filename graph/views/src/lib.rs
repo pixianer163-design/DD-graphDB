@@ -1,34 +1,4 @@
-//! Graph Views Module
-//!
-//! This module provides materialized view support for the graph database.
-//! Materialized views are pre-computed query results that are incrementally updated.
-//!
-//! ## Core Components:
-//! - `view_types`: View type definitions and classifications
-//! - `view_storage`: Storage interface for materialized views
-//! - `materialized_views`: Core materialized view management
-//! - `view_lifecycle`: View lifecycle and dependency management
-//! - `refresh_policy`: View refresh strategies and policies
-//!
-//! ## Integration Points:
-//! - Connects to GraphStorage for base data
-//! - Integrates with differential dataflow for incremental updates
-//! - Provides query interface to routing system
-//!
-//! This module provides materialized view support for the graph database.
-//! Materialized views are pre-computed query results that are incrementally updated.
-//!
-//! ## Core Components:
-//! - `view_types`: View type definitions and classifications
-//! - `view_storage`: Storage interface for materialized views
-//! - `materialized_views`: Core materialized view management
-//! - `view_lifecycle`: View lifecycle and dependency management
-//! - `refresh_policy`: View refresh strategies and policies
-//!
-//! ## Integration Points:
-//! - Connects to GraphStorage for base data
-//! - Integrates with differential dataflow for incremental updates
-//! - Provides query interface to routing system
+//! Graph Views Module - materialized view support for the graph database.
 
 pub mod view_types;
 pub mod storage_integration;
@@ -45,7 +15,7 @@ pub mod sql_parser;
 
 // Re-export core types
 pub use view_types::{
-    MaterializedView, ViewType, RefreshPolicy, ViewSizeMetrics, 
+    MaterializedView, ViewType, RefreshPolicy, ViewSizeMetrics,
     Complexity, PatternType, OptimizationHint
 };
 

@@ -569,6 +569,7 @@ name = "graph-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum 0.7.9",
  "futures",
  "graph-algorithms",
  "graph-collection",
@@ -577,9 +578,12 @@ dependencies = [
  "graph-storage",
  "prost",
  "serde",
+ "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
  "tonic",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
 ]

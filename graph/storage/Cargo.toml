@@ -19,7 +19,7 @@ futures = { workspace = true, optional = true }
 tempfile = "3"
 
 [features]
-default = []
+default = ["serde"]
 async = ["tokio", "futures"]
 serde = ["dep:serde", "dep:serde_json", "dep:bincode", "graph-core/serde"]
 streaming = []  # Placeholder for future streaming features

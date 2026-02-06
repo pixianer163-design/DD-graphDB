@@ -509,13 +509,16 @@ mod tests {
         graph.add_dependency("view1".to_string(), "view2".to_string(), DependencyType::Data);
         graph.add_dependency("view2".to_string(), "view3".to_string(), DependencyType::Aggregation);
 
+        // view1 has 1 outgoing dependency (to view2)
         let deps = graph.get_dependencies("view1");
-        assert_eq!(deps.len(), 0);
+        assert_eq!(deps.len(), 1);
 
+        // view2 has 1 outgoing dependency (to view3)
         let deps = graph.get_dependencies("view2");
         assert_eq!(deps.len(), 1);
 
-        let dependents = graph.get_dependents("view1");
+        // view2 has 1 reverse dependency (from view1)
+        let dependents = graph.get_dependents("view2");
         assert_eq!(dependents.len(), 1);
     }
 
