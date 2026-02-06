@@ -1,1 +1,4 @@
 /target
+.claude/
+graph/server/graph_data/
+*.bak
