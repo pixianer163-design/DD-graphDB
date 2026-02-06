@@ -698,13 +698,13 @@ mod tests {
 
     #[test]
     fn test_expressions() {
-        let expr1 = Expression::property("v", "age");
+        let expr1 = Expression::property("v".to_string(), "age".to_string());
         let expr2 = Expression::literal(GQLValue::Number(25.0));
         let comparison = Expression::gt(expr1, expr2);
 
         match comparison {
             Expression::Comparison { left, operator, right } => {
-                assert_eq!(*operator, ComparisonOp::Greater);
+                assert_eq!(operator, ComparisonOp::Greater);
                 assert!(matches!(*left, Expression::PropertyAccess(_, _)));
                 assert!(matches!(*right, Expression::Literal(_)));
             }

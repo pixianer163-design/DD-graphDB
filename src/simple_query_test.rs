@@ -5,13 +5,22 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 
-use graph_core::{VertexId, Edge, props};
+use graph_core::{VertexId, Edge, PropertyValue};
 use graph_storage::{GraphStorage, GraphOperation};
 use graph_query::{
-    QueryExecutor, Statement, QueryResult,
+    QueryExecutor, Statement,
     NodePattern, EdgePattern, GraphPattern, EdgeDirection,
     Expression, GQLValue, ComparisonOp, LogicalOp, ReturnItem,
 };
+
+fn make_person_props(name: &str, age: i64, department: &str) -> HashMap<String, PropertyValue> {
+    let mut props = HashMap::new();
+    props.insert("name".to_string(), PropertyValue::String(name.to_string()));
+    props.insert("type".to_string(), PropertyValue::String("Person".to_string()));
+    props.insert("age".to_string(), PropertyValue::Int64(age));
+    props.insert("department".to_string(), PropertyValue::String(department.to_string()));
+    props
+}
 
 fn main() {
     println!("🚀 Query Engine Core Test");
@@ -54,74 +63,49 @@ fn create_test_storage() -> Result<Arc<GraphStorage>, Box<dyn std::error::Error>
     // Alice (30, Engineering)
     transaction.add_operation(GraphOperation::AddVertex {
         id: VertexId::new(1),
-        properties: props::map(vec![
-            ("name", "Alice"),
-            ("type", "Person"),
-            ("age", 30 as i64),
-            ("department", "Engineering"),
-        ]),
+        properties: make_person_props("Alice", 30, "Engineering"),
     });
-    
+
     // Bob (25, Engineering)
     transaction.add_operation(GraphOperation::AddVertex {
         id: VertexId::new(2),
-        properties: props::map(vec![
-            ("name", "Bob"),
-            ("type", "Person"),
-            ("age", 25 as i64),
-            ("department", "Engineering"),
-        ]),
+        properties: make_person_props("Bob", 25, "Engineering"),
     });
-    
+
     // Charlie (35, Product)
     transaction.add_operation(GraphOperation::AddVertex {
         id: VertexId::new(3),
-        properties: props::map(vec![
-            ("name", "Charlie"),
-            ("type", "Person"),
-            ("age", 35 as i64),
-            ("department", "Product"),
-        ]),
+        properties: make_person_props("Charlie", 35, "Product"),
     });
-    
+
     // David (28, Design)
     transaction.add_operation(GraphOperation::AddVertex {
         id: VertexId::new(4),
-        properties: props::map(vec![
-            ("name", "David"),
-            ("type", "Person"),
-            ("age", 28 as i64),
-            ("department", "Design"),
-        ]),
+        properties: make_person_props("David", 28, "Design"),
     });
-    
+
     // Eve (40, Engineering)
     transaction.add_operation(GraphOperation::AddVertex {
         id: VertexId::new(5),
-        properties: props::map(vec![
-            ("name", "Eve"),
-            ("type", "Person"),
-            ("age", 40 as i64),
-            ("department", "Engineering"),
-        ]),
+        properties: make_person_props("Eve", 40, "Engineering"),
     });
-    
+
     // Alice manages Bob
     transaction.add_operation(GraphOperation::AddEdge {
         edge: Edge::new(VertexId::new(1), VertexId::new(2), "manages"),
-        properties: props::map(vec![]),
+        properties: HashMap::new(),
     });
-    
+
     // Eve manages Alice
     transaction.add_operation(GraphOperation::AddEdge {
         edge: Edge::new(VertexId::new(5), VertexId::new(1), "manages"),
-        properties: props::map(vec![]),
+        properties: HashMap::new(),
     });
-    
+
     // Bob collaborates with Charlie
     transaction.add_operation(GraphOperation::AddEdge {
         edge: Edge::new(VertexId::new(2), VertexId::new(3), "collaborates"),
-        properties: props::map(vec![]),
+        properties: HashMap::new(),
     });
     
     storage.commit_transaction(transaction)?;

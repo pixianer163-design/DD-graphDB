@@ -347,12 +347,22 @@ mod tests {
 
     #[test]
     fn test_property_creation() {
-        let props = props::map(vec![
+        use std::collections::HashMap;
+        use graph_core::PropertyValue;
+
+        // Test with same-type string values
+        let string_props = props::map(vec![
             ("name", "Alice"),
-            ("age", 30i64),
-            ("active", true),
+            ("city", "NYC"),
         ]);
-        
+        assert_eq!(string_props.get("name").unwrap().as_string(), Some("Alice"));
+
+        // Test with mixed types using manual construction
+        let mut props = HashMap::new();
+        props.insert("name".to_string(), PropertyValue::string("Alice"));
+        props.insert("age".to_string(), PropertyValue::int64(30));
+        props.insert("active".to_string(), PropertyValue::bool(true));
+
         assert_eq!(props.get("name").unwrap().as_string(), Some("Alice"));
         assert_eq!(props.get("age").unwrap().as_int64(), Some(30));
         assert_eq!(props.get("active").unwrap().as_bool(), Some(true));

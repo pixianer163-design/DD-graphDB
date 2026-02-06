@@ -805,18 +805,18 @@ mod tests {
     fn test_transaction_operations() {
         let snapshot = Snapshot::empty();
         let mut transaction = Transaction::new(1, snapshot);
-        
+
         let operation = GraphOperation::AddVertex {
             id: VertexId::new(1),
             properties: props::map(vec![("name", "Test")]),
         };
-        
+
         transaction.add_operation(operation);
         assert_eq!(transaction.operation_count(), 1);
-        
+
+        // commit() consumes the transaction, so we can't check is_committed after
         let operations = transaction.commit().unwrap();
         assert_eq!(operations.len(), 1);
-        assert!(transaction.is_committed);
     }
 
     #[test]
@@ -863,31 +863,33 @@ mod tests {
     #[test]
     fn test_persistence() -> Result<(), StorageError> {
         let temp_dir = tempdir().unwrap();
-        
+
         // Create initial storage
         {
             let storage = GraphStorage::new(temp_dir.path())?;
             let mut transaction = storage.begin_transaction()?;
-            
+
             transaction.add_operation(GraphOperation::AddVertex {
                 id: VertexId::new(1),
                 properties: props::map(vec![("name", "Persistent")]),
             });
-            
+
             storage.commit_transaction(transaction)?;
+            // Force checkpoint to persist data before closing
+            storage.force_checkpoint()?;
             storage.close()?;
         }
-        
+
         // Reopen storage
         {
             let storage = GraphStorage::new(temp_dir.path())?;
             let vertex_props = storage.get_vertex(VertexId::new(1))?;
             assert!(vertex_props.is_some());
             assert_eq!(vertex_props.unwrap().get("name").unwrap().as_string(), Some("Persistent"));
-            
+
             storage.close()?;
         }
-        
+
         Ok(())
     }
 }

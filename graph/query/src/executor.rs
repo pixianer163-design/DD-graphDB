@@ -550,42 +550,56 @@ mod tests {
     use graph_core::props;
     use graph_storage::GraphOperation;
 
+    fn make_person(name: &str, age: i64) -> Properties {
+        let mut props = HashMap::new();
+        props.insert("name".to_string(), PropertyValue::String(name.to_string()));
+        props.insert("age".to_string(), PropertyValue::Int64(age));
+        props.insert("type".to_string(), PropertyValue::String("Person".to_string()));
+        props
+    }
+
+    fn make_edge_props(since: i64) -> Properties {
+        let mut props = HashMap::new();
+        props.insert("since".to_string(), PropertyValue::Int64(since));
+        props
+    }
+
     fn create_test_storage() -> Arc<GraphStorage> {
         let temp_dir = std::env::temp_dir().join("query_test");
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
-        
+
         let storage = Arc::new(GraphStorage::new(&temp_dir).unwrap());
-        
+
         // Create test data
         let mut transaction = storage.begin_transaction().unwrap();
-        
+
         // Add vertices
         transaction.add_operation(GraphOperation::AddVertex {
             id: VertexId::new(1),
-            properties: props::map(vec![("name", "Alice"), ("age", 30i64), ("type", "Person")]),
+            properties: make_person("Alice", 30),
         });
         transaction.add_operation(GraphOperation::AddVertex {
             id: VertexId::new(2),
-            properties: props::map(vec![("name", "Bob"), ("age", 25i64), ("type", "Person")]),
+            properties: make_person("Bob", 25),
         });
         transaction.add_operation(GraphOperation::AddVertex {
             id: VertexId::new(3),
-            properties: props::map(vec![("name", "Charlie"), ("age", 35i64), ("type", "Person")]),
+            properties: make_person("Charlie", 35),
         });
-        
+
         // Add edges
         transaction.add_operation(GraphOperation::AddEdge {
             edge: Edge::new(VertexId::new(1), VertexId::new(2), "friend"),
-            properties: props::map(vec![("since", 2020i64)]),
+            properties: make_edge_props(2020),
         });
         transaction.add_operation(GraphOperation::AddEdge {
             edge: Edge::new(VertexId::new(2), VertexId::new(3), "friend"),
-            properties: props::map(vec![("since", 2021i64)]),
+            properties: make_edge_props(2021),
         });
-        
+
         storage.commit_transaction(transaction).unwrap();
-        
+
         storage
     }
 
