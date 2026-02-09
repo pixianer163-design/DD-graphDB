@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use graph_core::{VertexId, Edge, Properties, PropertyValue};
-use graph_storage::{GraphStorage, StorageError};
+use graph_storage::{GraphStorage, GraphOperation, StorageError};
 
 use crate::{
     Statement, GraphPattern, NodePattern, EdgePattern, EdgeDirection,
@@ -175,19 +175,17 @@ impl QueryExecutor {
                 where_clause,
                 return_items,
             } => self.execute_match(&pattern, &where_clause, &return_items),
-            Statement::Create { pattern: _ } => {
-                Err(QueryError::NotImplemented("CREATE not yet implemented".to_string()))
+            Statement::Create { pattern } => {
+                self.execute_create(&pattern)
             }
             Statement::Delete { variable: _ } => {
-                Err(QueryError::NotImplemented("DELETE not yet implemented".to_string()))
+                Err(QueryError::NotImplemented("DELETE without MATCH not supported; use MATCH...DELETE".to_string()))
             }
             Statement::MatchDelete {
-                pattern: _,
-                where_clause: _,
-                variable: _,
-            } => Err(QueryError::NotImplemented(
-                "MATCH DELETE not yet implemented".to_string(),
-            )),
+                pattern,
+                where_clause,
+                variable,
+            } => self.execute_match_delete(&pattern, &where_clause, &variable),
         }
     }
 
@@ -254,11 +252,11 @@ impl QueryExecutor {
                 let matching_edges =
                     self.find_matching_edges(*current_id, edge_pattern, next_node)?;
 
-                for (edge, target_id, target_props) in matching_edges {
+                for (_edge, target_id, target_props) in matching_edges {
                     let mut new_binding = binding.clone();
 
                     // Add edge to binding
-                    if let Some(edge_var) = &edge_pattern.variable {
+                    if let Some(_edge_var) = &edge_pattern.variable {
                         // Store edge as a special property in the binding
                         // For now, we'll handle this differently
                     }
@@ -493,7 +491,7 @@ impl QueryExecutor {
             for item in return_items {
                 match item {
                     ReturnItem::Variable(var) => {
-                        if let Some((id, props)) = binding.get(var) {
+                        if let Some((_id, props)) = binding.get(var) {
                             // Return vertex properties
                             for (key, value) in props {
                                 row.push((format!("{}.{}", var, key), value.clone()));
@@ -517,6 +515,113 @@ impl QueryExecutor {
         }
 
         Ok(QueryResult::Values(rows))
+    }
+
+    /// Execute a CREATE statement
+    fn execute_create(&self, pattern: &GraphPattern) -> Result<QueryResult, QueryError> {
+        let mut transaction = self.storage.begin_transaction()?;
+        let mut created_vertices = Vec::new();
+
+        // Create vertices from node patterns
+        for node in &pattern.nodes {
+            // Generate a vertex ID (use hash of label+properties as a simple strategy)
+            let id = self.next_vertex_id()?;
+
+            let mut properties: Properties = node.properties.iter()
+                .map(|(k, v)| (k.clone(), v.to_property_value()))
+                .collect();
+
+            // Store label as a "type" property
+            if let Some(label) = &node.label {
+                properties.insert("type".to_string(), PropertyValue::String(label.clone()));
+            }
+
+            transaction.add_operation(GraphOperation::AddVertex {
+                id,
+                properties: properties.clone(),
+            });
+            created_vertices.push((id, properties));
+        }
+
+        // Create edges from edge patterns (connect consecutive nodes)
+        for (i, edge_pattern) in pattern.edges.iter().enumerate() {
+            if i + 1 < created_vertices.len() {
+                let src = created_vertices[i].0;
+                let dst = created_vertices[i + 1].0;
+                let label = edge_pattern.label.clone().unwrap_or_else(|| "related".to_string());
+
+                let properties: Properties = edge_pattern.properties.iter()
+                    .map(|(k, v)| (k.clone(), v.to_property_value()))
+                    .collect();
+
+                transaction.add_operation(GraphOperation::AddEdge {
+                    edge: Edge::new(src, dst, label),
+                    properties,
+                });
+            }
+        }
+
+        self.storage.commit_transaction(transaction)?;
+        Ok(QueryResult::Vertices(created_vertices))
+    }
+
+    /// Execute a MATCH...DELETE statement
+    fn execute_match_delete(
+        &self,
+        pattern: &GraphPattern,
+        where_clause: &Option<Expression>,
+        variable: &str,
+    ) -> Result<QueryResult, QueryError> {
+        // First, match to find vertices to delete
+        let bindings = self.match_pattern(pattern)?;
+
+        let filtered_bindings: Vec<Bindings> = bindings
+            .into_iter()
+            .filter(|binding| {
+                if let Some(expr) = where_clause {
+                    self.evaluate_expression(expr, binding)
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        // Collect vertex IDs to delete
+        let mut to_delete: Vec<VertexId> = Vec::new();
+        for binding in &filtered_bindings {
+            if let Some((id, _)) = binding.get(variable) {
+                to_delete.push(*id);
+            }
+        }
+
+        if to_delete.is_empty() {
+            return Ok(QueryResult::Empty);
+        }
+
+        // Delete matched vertices
+        let mut transaction = self.storage.begin_transaction()?;
+        let mut deleted = Vec::new();
+
+        for id in &to_delete {
+            // Get vertex properties before deletion for the result
+            if let Ok(Some(props)) = self.storage.get_vertex(*id) {
+                transaction.add_operation(GraphOperation::RemoveVertex { id: *id });
+                deleted.push((*id, props));
+            }
+        }
+
+        self.storage.commit_transaction(transaction)?;
+        Ok(QueryResult::Vertices(deleted))
+    }
+
+    /// Generate the next available vertex ID
+    fn next_vertex_id(&self) -> Result<VertexId, QueryError> {
+        let vertices = self.storage.list_vertices()?;
+        let max_id = vertices.iter()
+            .map(|(id, _)| id.value())
+            .max()
+            .unwrap_or(0);
+        Ok(VertexId::new(max_id + 1))
     }
 }
 
@@ -606,7 +711,7 @@ mod tests {
     #[test]
     fn test_query_executor_creation() {
         let storage = create_test_storage();
-        let executor = QueryExecutor::new(storage);
+        let _executor = QueryExecutor::new(storage);
         // Just verify it doesn't panic
     }
 
@@ -625,5 +730,56 @@ mod tests {
         let result = QueryResult::Vertices(vertices);
         assert!(!result.is_empty());
         assert_eq!(result.count(), 1);
+    }
+
+    #[test]
+    fn test_property_filter_query() {
+        let storage = create_test_storage();
+        let executor = QueryExecutor::new(storage);
+
+        // MATCH (v:Person) WHERE v.age > 25 RETURN v.name, v.age
+        let pattern = GraphPattern::new()
+            .add_node(
+                NodePattern::new()
+                    .with_variable("v".to_string())
+                    .with_label("Person".to_string()),
+            );
+
+        let where_clause = Some(Expression::gt(
+            Expression::property("v".to_string(), "age".to_string()),
+            Expression::literal(GQLValue::Number(25.0)),
+        ));
+
+        let return_items = vec![
+            ReturnItem::Property("v".to_string(), "name".to_string()),
+            ReturnItem::Property("v".to_string(), "age".to_string()),
+        ];
+
+        let statement = Statement::Match {
+            pattern,
+            where_clause,
+            return_items,
+        };
+
+        let result = executor.execute(statement).unwrap();
+
+        // Alice (30) and Charlie (35) should match, Bob (25) should not
+        assert_eq!(result.count(), 2);
+
+        if let QueryResult::Values(rows) = &result {
+            let names: Vec<String> = rows
+                .iter()
+                .filter_map(|row| {
+                    row.iter()
+                        .find(|(k, _)| k == "v.name")
+                        .and_then(|(_, v)| v.as_string().map(|s| s.to_string()))
+                })
+                .collect();
+            assert!(names.contains(&"Alice".to_string()));
+            assert!(names.contains(&"Charlie".to_string()));
+            assert!(!names.contains(&"Bob".to_string()));
+        } else {
+            panic!("Expected Values result, got {:?}", result);
+        }
     }
 }
