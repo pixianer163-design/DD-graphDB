@@ -2,197 +2,119 @@ use graph_core::*;
 use std::collections::HashMap;
 
 #[cfg(feature = "streaming")]
-use differential_dataflow::collection::Collection;
+use differential_dataflow::collection::VecCollection;
 #[cfg(feature = "streaming")]
 use timely::dataflow::Scope;
+
+/// Ordered wrapper around Properties (HashMap) for use with differential-dataflow.
+/// differential-dataflow requires data types to implement Ord, but HashMap does not.
+/// This wrapper provides a deterministic ordering by sorting entries.
+#[cfg(feature = "streaming")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrdProperties(pub HashMap<String, PropertyValue>);
+
+#[cfg(feature = "streaming")]
+impl std::hash::Hash for OrdProperties {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let mut keys: Vec<_> = self.0.keys().collect();
+        keys.sort();
+        for key in &keys {
+            key.hash(state);
+            self.0[*key].hash(state);
+        }
+    }
+}
+
+#[cfg(feature = "streaming")]
+impl PartialOrd for OrdProperties {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[cfg(feature = "streaming")]
+impl Ord for OrdProperties {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let mut self_entries: Vec<_> = self.0.iter().collect();
+        let mut other_entries: Vec<_> = other.0.iter().collect();
+        self_entries.sort_by_key(|(k, _)| *k);
+        other_entries.sort_by_key(|(k, _)| *k);
+        // Compare keys first, then by count
+        let self_keys: Vec<_> = self_entries.iter().map(|(k, _)| *k).collect();
+        let other_keys: Vec<_> = other_entries.iter().map(|(k, _)| *k).collect();
+        self_keys.cmp(&other_keys)
+    }
+}
+
+#[cfg(feature = "streaming")]
+impl From<HashMap<String, PropertyValue>> for OrdProperties {
+    fn from(map: HashMap<String, PropertyValue>) -> Self {
+        OrdProperties(map)
+    }
+}
 
 /// A graph structure using differential dataflow collections for incremental processing
 #[cfg(feature = "streaming")]
 pub struct GraphCollection<G: Scope> {
-    /// Collection of vertices with their properties (VertexId, Properties)
-    pub vertices: Collection<G, (VertexId, HashMap<String, PropertyValue>)>,
-    /// Collection of edges with their properties (Edge, Properties)  
-    pub edges: Collection<G, (Edge, HashMap<String, PropertyValue>)>,
+    /// Collection of vertices with their properties
+    pub vertices: VecCollection<G, (VertexId, OrdProperties)>,
+    /// Collection of edges with their properties
+    pub edges: VecCollection<G, (Edge, OrdProperties)>,
 }
 
 #[cfg(feature = "streaming")]
 impl<G: Scope> GraphCollection<G>
 where
-    G::Timestamp: differential_dataflow::lattice::Lattice + Ord,
+    G::Timestamp: differential_dataflow::lattice::Lattice + Ord + Clone + 'static,
 {
     /// Create a new GraphCollection from vertex and edge collections
     pub fn new(
-        vertices: Collection<G, (VertexId, HashMap<String, PropertyValue>)>,
-        edges: Collection<G, (Edge, HashMap<String, PropertyValue>)>,
+        vertices: VecCollection<G, (VertexId, OrdProperties)>,
+        edges: VecCollection<G, (Edge, OrdProperties)>,
     ) -> Self {
         Self { vertices, edges }
     }
 
-    /// Create an empty GraphCollection
-    pub fn empty(scope: &mut G) -> Self {
-        Self {
-            vertices: Collection::new(scope),
-            edges: Collection::new(scope),
-        }
-    }
-
-#[cfg(feature = "streaming")]
-#[cfg(feature = "streaming")]
     /// Get all vertices that have a specific label
-    pub fn vertices_with_label(&self, label: &str) -> Collection<G, VertexId> {
+    pub fn vertices_with_label(&self, label: String) -> VecCollection<G, (VertexId, OrdProperties)> {
         self.vertices
             .filter(move |(_, props)| {
-                props.get("type")
-                    .and_then(|p| p.as_string())
+                props.0.get("type")
+                    .and_then(|p: &PropertyValue| p.as_string())
                     .map(|l| l == label)
                     .unwrap_or(false)
             })
-            .map(|(v, _)| v)
     }
 
-#[cfg(feature = "streaming")]
     /// Get all edges with a specific label
-    pub fn edges_with_label(&self, label: &str) -> Collection<G, Edge> {
+    pub fn edges_with_label(&self, label: String) -> VecCollection<G, (Edge, OrdProperties)> {
         self.edges
             .filter(move |(edge, _)| edge.label == label)
-            .map(|(edge, _)| edge)
     }
 
-#[cfg(feature = "streaming")]
-    /// Get all neighbors of a vertex (both incoming and outgoing)
-    pub fn neighbors(&self, vertex: VertexId) -> Collection<G, VertexId> {
-        // Create a collection with just the target vertex for joining
-        let target = self.vertices
-            .filter(move |(v, _)| *v == vertex)
-            .map(|(v, _)| (v, ()));
-
-        // Outgoing neighbors
-        let outgoing = self.edges
-            .map(|(edge, _)| (edge.src, edge.dst))
-            .join_core(&target, |_src, dst, _| Some(*dst));
-
-        // Incoming neighbors
-        let incoming = self.edges
-            .map(|(edge, _)| (edge.dst, edge.src))
-            .join_core(&target, |_dst, src, _| Some(*src));
-
-        outgoing.concat(&incoming).distinct()
-    }
-
-#[cfg(feature = "streaming")]
-    /// Get outgoing neighbors of a vertex
-    pub fn outgoing_neighbors(&self, vertex: VertexId) -> Collection<G, VertexId> {
-        let target = self.vertices
-            .filter(move |(v, _)| *v == vertex)
-            .map(|(v, _)| (v, ()));
-
-        self.edges
-            .map(|(edge, _)| (edge.src, edge.dst))
-            .join_core(&target, |_src, dst, _| Some(*dst))
-            .distinct()
-    }
-
-#[cfg(feature = "streaming")]
-    /// Get incoming neighbors of a vertex
-    pub fn incoming_neighbors(&self, vertex: VertexId) -> Collection<G, VertexId> {
-        let target = self.vertices
-            .filter(move |(v, _)| *v == vertex)
-            .map(|(v, _)| (v, ()));
-
-        self.edges
-            .map(|(edge, _)| (edge.dst, edge.src))
-            .join_core(&target, |_dst, src, _| Some(*src))
-            .distinct()
-    }
-
-#[cfg(feature = "streaming")]
-    /// Get out-degree of a vertex
-    pub fn out_degree(&self, vertex: VertexId) -> Collection<G, (VertexId, usize)> {
-        let target = self.vertices
-            .filter(move |(v, _)| *v == vertex)
-            .map(|(v, _)| (v, ()));
-
-        self.edges
-            .map(|(edge, _)| (edge.src, ()))
-            .join_core(&target, |src, (), _| Some((*src, 1)))
-            .count()
-    }
-
-#[cfg(feature = "streaming")]
-    /// Get in-degree of a vertex
-    pub fn in_degree(&self, vertex: VertexId) -> Collection<G, (VertexId, usize)> {
-        let target = self.vertices
-            .filter(move |(v, _)| *v == vertex)
-            .map(|(v, _)| (v, ()));
-
-        self.edges
-            .map(|(edge, _)| (edge.dst, ()))
-            .join_core(&target, |dst, (), _| Some((*dst, 1)))
-            .count()
-    }
-
-#[cfg(feature = "streaming")]
-    /// Compute degree distribution of the entire graph
-    pub fn degree_distribution(&self) -> Collection<G, (usize, usize)> {
-        // Count out-degrees for all vertices
-        self.edges
-            .map(|(edge, _)| edge.src)
-            .count()
-            .map(|(_v, deg)| deg as usize)
-            .count()
-    }
-
-#[cfg(feature = "streaming")]
     /// Get edges between two vertices
-    pub fn edges_between(&self, src: VertexId, dst: VertexId) -> Collection<G, Edge> {
+    pub fn edges_between(&self, src: VertexId, dst: VertexId) -> VecCollection<G, (Edge, OrdProperties)> {
         self.edges
             .filter(move |(edge, _)| {
-                (edge.src == src && edge.dst == dst) || 
+                (edge.src == src && edge.dst == dst) ||
                 (edge.src == dst && edge.dst == src)
             })
-            .map(|(edge, _)| edge)
     }
 
-#[cfg(feature = "streaming")]
     /// Filter vertices by property conditions
-    pub fn filter_vertices<F>(&self, predicate: F) -> Collection<G, VertexId>
+    pub fn filter_vertices<F>(&self, predicate: F) -> VecCollection<G, (VertexId, OrdProperties)>
     where
-        F: Fn(&VertexId, &HashMap<String, PropertyValue>) -> bool + 'static,
+        F: FnMut(&(VertexId, OrdProperties)) -> bool + 'static,
     {
-        self.vertices
-            .filter(predicate)
-            .map(|(v, _)| v)
+        self.vertices.filter(predicate)
     }
 
-#[cfg(feature = "streaming")]
     /// Filter edges by property conditions
-    pub fn filter_edges<F>(&self, predicate: F) -> Collection<G, Edge>
+    pub fn filter_edges<F>(&self, predicate: F) -> VecCollection<G, (Edge, OrdProperties)>
     where
-        F: Fn(&Edge, &HashMap<String, PropertyValue>) -> bool + 'static,
+        F: FnMut(&(Edge, OrdProperties)) -> bool + 'static,
     {
-        self.edges
-            .filter(predicate)
-            .map(|(edge, _)| edge)
-    }
-
-#[cfg(feature = "streaming")]
-    /// Get vertex properties for a specific vertex
-    pub fn vertex_properties(&self, vertex: VertexId) -> Collection<G, HashMap<String, PropertyValue>> {
-        self.vertices
-            .filter(move |(v, _)| *v == vertex)
-            .map(|(_, props)| props)
-    }
-
-#[cfg(feature = "streaming")]
-    /// Count total number of vertices
-    pub fn vertex_count(&self) -> Collection<G, usize> {
-        self.vertices.count().map(|(_, count)| count as usize)
-    }
-
-#[cfg(feature = "streaming")]
-    /// Count total number of edges
-    pub fn edge_count(&self) -> Collection<G, usize> {
-        self.edges.count().map(|(_, count)| count as usize)
+        self.edges.filter(predicate)
     }
 }
 
@@ -201,7 +123,7 @@ where
 pub struct SimpleGraphCollection {
     /// Simple vector of vertices with their properties
     pub vertices: Vec<(VertexId, HashMap<String, PropertyValue>)>,
-    /// Simple vector of edges with their properties  
+    /// Simple vector of edges with their properties
     pub edges: Vec<(Edge, HashMap<String, PropertyValue>)>,
 }
 
@@ -249,7 +171,7 @@ impl SimpleGraphCollection {
     /// Get all neighbors of a vertex (both incoming and outgoing)
     pub fn neighbors(&self, vertex: VertexId) -> Vec<VertexId> {
         let mut neighbors = std::collections::HashSet::new();
-        
+
         for (edge, _) in &self.edges {
             if edge.src == vertex {
                 neighbors.insert(edge.dst);
@@ -258,7 +180,7 @@ impl SimpleGraphCollection {
                 neighbors.insert(edge.src);
             }
         }
-        
+
         neighbors.into_iter().collect()
     }
 
@@ -300,25 +222,12 @@ impl SimpleGraphCollection {
             .count()
     }
 
-    /// Compute degree distribution of the entire graph
-    pub fn degree_distribution(&self) -> Vec<(usize, usize)> {
-        let mut degree_counts = std::collections::HashMap::new();
-        
-        // Count degrees for all vertices
-        for (vertex, _) in &self.vertices {
-            let degree = self.out_degree(*vertex) + self.in_degree(*vertex);
-            *degree_counts.entry(degree).or_insert(0) += 1;
-        }
-        
-        degree_counts.into_iter().collect()
-    }
-
     /// Get edges between two vertices
     pub fn edges_between(&self, src: VertexId, dst: VertexId) -> Vec<Edge> {
         self.edges
             .iter()
             .filter(|(edge, _)| {
-                (edge.src == src && edge.dst == dst) || 
+                (edge.src == src && edge.dst == dst) ||
                 (edge.src == dst && edge.dst == src)
             })
             .map(|(edge, _)| edge.clone())
@@ -375,14 +284,13 @@ mod tests {
 
     #[test]
     fn test_edge_operations() {
-        // Test edge creation logic
         let edge1 = Edge::from_ids(1, 2, "friend");
         let edge2 = Edge::new(VertexId::new(1), VertexId::new(3), "colleague");
-        
+
         assert_eq!(edge1.src, VertexId::new(1));
         assert_eq!(edge1.dst, VertexId::new(2));
         assert_eq!(edge1.label, "friend");
-        
+
         assert_eq!(edge2.src, VertexId::new(1));
         assert_eq!(edge2.dst, VertexId::new(3));
         assert_eq!(edge2.label, "colleague");
@@ -392,7 +300,7 @@ mod tests {
     fn test_edge_reversed() {
         let edge = Edge::from_ids(1, 2, "friend");
         let reversed = edge.reversed();
-        
+
         assert_eq!(reversed.src, VertexId::new(2));
         assert_eq!(reversed.dst, VertexId::new(1));
         assert_eq!(reversed.label, "friend");
@@ -403,7 +311,7 @@ mod tests {
         let edge1 = Edge::from_ids(1, 2, "friend");
         let edge2 = Edge::from_ids(1, 2, "colleague");
         let edge3 = Edge::from_ids(2, 1, "friend_reverse");
-        
+
         assert!(edge1.connects_same_vertices(&edge2));
         assert!(edge1.connects_same_vertices(&edge3));
         assert!(!edge2.connects_same_vertices(&Edge::from_ids(3, 4, "other")));
