@@ -663,6 +663,12 @@ mod tests {
         props
     }
 
+    fn make_person_with_dept(name: &str, age: i64, department: &str) -> Properties {
+        let mut props = make_person(name, age);
+        props.insert("department".to_string(), PropertyValue::String(department.to_string()));
+        props
+    }
+
     fn make_edge_props(since: i64) -> Properties {
         let mut props = HashMap::new();
         props.insert("since".to_string(), PropertyValue::Int64(since));
@@ -778,6 +784,143 @@ mod tests {
             assert!(names.contains(&"Alice".to_string()));
             assert!(names.contains(&"Charlie".to_string()));
             assert!(!names.contains(&"Bob".to_string()));
+        } else {
+            panic!("Expected Values result, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_edge_traversal_query() {
+        let storage = create_test_storage();
+        let executor = QueryExecutor::new(storage);
+
+        // MATCH (a)-[e:friend]->(b) RETURN b.name
+        // Graph: Alice->Bob->Charlie via "friend" edges
+        let pattern = GraphPattern::new()
+            .add_node(
+                NodePattern::new()
+                    .with_variable("a".to_string()),
+            )
+            .add_edge(
+                EdgePattern::new()
+                    .with_variable("e".to_string())
+                    .with_label("friend".to_string())
+                    .with_direction(EdgeDirection::Outgoing),
+            )
+            .add_node(
+                NodePattern::new()
+                    .with_variable("b".to_string()),
+            );
+
+        let statement = Statement::Match {
+            pattern,
+            where_clause: None,
+            return_items: vec![ReturnItem::Property("b".to_string(), "name".to_string())],
+        };
+
+        let result = executor.execute(statement).unwrap();
+
+        // Two friend edges: Alice->Bob and Bob->Charlie
+        // So b should be Bob and Charlie
+        assert_eq!(result.count(), 2);
+
+        if let QueryResult::Values(rows) = &result {
+            let names: Vec<String> = rows
+                .iter()
+                .filter_map(|row| {
+                    row.iter()
+                        .find(|(k, _)| k == "b.name")
+                        .and_then(|(_, v)| v.as_string().map(|s| s.to_string()))
+                })
+                .collect();
+            assert!(names.contains(&"Bob".to_string()));
+            assert!(names.contains(&"Charlie".to_string()));
+            assert!(!names.contains(&"Alice".to_string()));
+        } else {
+            panic!("Expected Values result, got {:?}", result);
+        }
+    }
+
+    fn create_test_storage_with_departments() -> Arc<GraphStorage> {
+        let temp_dir = std::env::temp_dir().join("query_test_dept");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let storage = Arc::new(GraphStorage::new(&temp_dir).unwrap());
+
+        let mut transaction = storage.begin_transaction().unwrap();
+
+        transaction.add_operation(GraphOperation::AddVertex {
+            id: VertexId::new(1),
+            properties: make_person_with_dept("Alice", 30, "Engineering"),
+        });
+        transaction.add_operation(GraphOperation::AddVertex {
+            id: VertexId::new(2),
+            properties: make_person_with_dept("Bob", 25, "Engineering"),
+        });
+        transaction.add_operation(GraphOperation::AddVertex {
+            id: VertexId::new(3),
+            properties: make_person_with_dept("Charlie", 35, "Marketing"),
+        });
+        transaction.add_operation(GraphOperation::AddVertex {
+            id: VertexId::new(4),
+            properties: make_person_with_dept("Diana", 28, "Engineering"),
+        });
+
+        storage.commit_transaction(transaction).unwrap();
+        storage
+    }
+
+    #[test]
+    fn test_multi_condition_query() {
+        let storage = create_test_storage_with_departments();
+        let executor = QueryExecutor::new(storage);
+
+        // MATCH (v:Person) WHERE v.age > 25 AND v.department = 'Engineering' RETURN v.name
+        let pattern = GraphPattern::new()
+            .add_node(
+                NodePattern::new()
+                    .with_variable("v".to_string())
+                    .with_label("Person".to_string()),
+            );
+
+        let where_clause = Some(Expression::and(
+            Expression::gt(
+                Expression::property("v".to_string(), "age".to_string()),
+                Expression::literal(GQLValue::Number(25.0)),
+            ),
+            Expression::eq(
+                Expression::property("v".to_string(), "department".to_string()),
+                Expression::literal(GQLValue::String("Engineering".to_string())),
+            ),
+        ));
+
+        let statement = Statement::Match {
+            pattern,
+            where_clause,
+            return_items: vec![ReturnItem::Property("v".to_string(), "name".to_string())],
+        };
+
+        let result = executor.execute(statement).unwrap();
+
+        // Alice (30, Engineering) and Diana (28, Engineering) match age > 25 AND dept = Engineering
+        // Bob (25, Engineering) fails age > 25
+        // Charlie (35, Marketing) fails dept = Engineering
+        assert_eq!(result.count(), 2);
+
+        if let QueryResult::Values(rows) = &result {
+            let names: Vec<String> = rows
+                .iter()
+                .filter_map(|row| {
+                    row.iter()
+                        .find(|(k, _)| k == "v.name")
+                        .and_then(|(_, v)| v.as_string().map(|s| s.to_string()))
+                })
+                .collect();
+            assert!(names.contains(&"Alice".to_string()));
+            assert!(names.contains(&"Diana".to_string()));
+            assert!(!names.contains(&"Bob".to_string()));
+            assert!(!names.contains(&"Charlie".to_string()));
         } else {
             panic!("Expected Values result, got {:?}", result);
         }
