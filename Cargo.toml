@@ -92,40 +92,10 @@ path = "src/main.rs"
 name = "graph_demo"
 path = "src/demo.rs"
 
-[[bin]] 
-name = "integrated_demo"
-path = "src/integrated_demo.rs"
-required-features = ["views"]
-
 [[bin]]
 name = "simple_demo"
 path = "src/simple_integrated_demo.rs"
 required-features = ["views"]
-
-[[bin]]
-name = "incremental_demo"
-path = "src/incremental_demo.rs"
-required-features = ["views"]
-
-[[bin]]
-name = "incremental_quick_demo" 
-path = "src/incremental_quick_demo.rs"
-required-features = ["views"]
-
-[[bin]]
-name = "stream_demo"
-path = "src/stream_demo.rs"
-required-features = ["views"]
-
-[[bin]]
-name = "simple_stream_demo"
-path = "src/simple_stream_demo.rs"
-required-features = ["views"]
-
-[[bin]]
-name = "test_sql_view"
-path = "src/test_sql_view.rs"
-required-features = ["views", "sql"]
 
 [[bin]]
 name = "query_demo"

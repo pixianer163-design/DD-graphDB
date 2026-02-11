@@ -1,4 +1,7 @@
 /target
 .claude/
+.cargo/
 graph/server/graph_data/
 *.bak
+nul
+rustup-init.exe

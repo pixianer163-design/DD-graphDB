@@ -3,13 +3,14 @@
 //! This is a simplified version that focuses on core functionality without
 //! the complexity of the full implementation.
 
+use std::collections::HashMap;
 use std::sync::Arc;
-
 
 use graph_core::{VertexId, Edge, Properties};
 use graph_storage::{GraphStorage, DatabaseStats};
 
 use crate::view_types::{ViewType};
+use crate::{ViewError, DataChange, ChangeSet, IncrementalEngine};
 
 /// Simple data change event
 #[derive(Debug, Clone)]
@@ -32,18 +33,8 @@ impl DataChangeEvent {
     }
 }
 
-/// Error types for materialized views
-#[derive(Debug, thiserror::Error)]
-pub enum MaterializedViewError {
-    #[error("Storage error: {error}")]
-    StorageError { error: String },
-    
-    #[error("View refresh failed: {view_name}")]
-    RefreshFailed { view_name: String },
-    
-    #[error("Invalid view definition: {details}")]
-    InvalidDefinition { details: String },
-}
+/// Type alias for backward compatibility
+pub type MaterializedViewError = ViewError;
 
 /// Read-only interface for views to access graph data
 pub trait ViewDataReader {
@@ -118,15 +109,41 @@ impl DataChangeListener for ViewRefreshListener {
 }
 
 /// Simple integrated view manager
-#[derive(Debug)]
 pub struct IntegratedViewManager {
     storage_integration: Arc<StorageIntegration>,
+    listeners: std::sync::RwLock<HashMap<String, Box<dyn DataChangeListener>>>,
+    incremental_engine: Option<Arc<IncrementalEngine>>,
+}
+
+impl std::fmt::Debug for IntegratedViewManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let listener_count = self.listeners.read()
+            .map(|l| l.len())
+            .unwrap_or(0);
+        f.debug_struct("IntegratedViewManager")
+            .field("listener_count", &listener_count)
+            .field("has_engine", &self.incremental_engine.is_some())
+            .finish()
+    }
 }
 
 impl IntegratedViewManager {
     /// Create a new integrated view manager
     pub fn new(storage_integration: Arc<StorageIntegration>) -> Self {
-        Self { storage_integration }
+        Self {
+            storage_integration,
+            listeners: std::sync::RwLock::new(HashMap::new()),
+            incremental_engine: None,
+        }
+    }
+
+    /// Create with an incremental engine for end-to-end change propagation
+    pub fn with_engine(storage_integration: Arc<StorageIntegration>, engine: Arc<IncrementalEngine>) -> Self {
+        Self {
+            storage_integration,
+            listeners: std::sync::RwLock::new(HashMap::new()),
+            incremental_engine: Some(engine),
+        }
     }
 
     /// Get the storage integration
@@ -134,16 +151,83 @@ impl IntegratedViewManager {
         &self.storage_integration
     }
 
-    /// Register a simple view
+    /// Get the incremental engine (if configured)
+    pub fn engine(&self) -> Option<&Arc<IncrementalEngine>> {
+        self.incremental_engine.as_ref()
+    }
+
+    /// Register a view with a change listener
     pub fn register_view(&self, view_id: String, _view_type: ViewType) -> Result<(), MaterializedViewError> {
-        let listener = ViewRefreshListener::new(view_id);
-        println!("Registered view: {}", listener.view_id());
+        let listener = ViewRefreshListener::new(view_id.clone());
+        let mut listeners = self.listeners.write()
+            .map_err(|e| MaterializedViewError::StorageError { error: e.to_string() })?;
+        listeners.insert(view_id, Box::new(listener));
+        Ok(())
+    }
+
+    /// Notify all registered listeners of a data change, and propagate
+    /// through the incremental engine if one is attached.
+    pub fn notify_change(&self, event: &DataChangeEvent) -> Result<(), MaterializedViewError> {
+        // Notify simple listeners
+        let listeners = self.listeners.read()
+            .map_err(|e| MaterializedViewError::StorageError { error: e.to_string() })?;
+        for listener in listeners.values() {
+            listener.on_data_change(event)?;
+        }
+        drop(listeners);
+
+        // Propagate to incremental engine
+        if let Some(engine) = &self.incremental_engine {
+            if let Some(data_change) = Self::event_to_data_change(event) {
+                let mut changeset = ChangeSet::new(
+                    format!("storage_event_{}", std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()),
+                    "storage_integration".to_string(),
+                );
+                changeset.add_change(data_change);
+                engine.process_changeset(changeset)
+                    .map_err(|e| MaterializedViewError::StorageError { error: e.to_string() })?;
+            }
+        }
+
         Ok(())
     }
 
     /// Commit a transaction with view refresh
     pub fn commit_with_view_refresh(&self, transaction: graph_storage::Transaction) -> Result<(), MaterializedViewError> {
         self.storage_integration.commit_with_events(transaction)
+    }
+
+    /// Convert a DataChangeEvent to a DataChange for the incremental engine
+    fn event_to_data_change(event: &DataChangeEvent) -> Option<DataChange> {
+        match event {
+            DataChangeEvent::VertexChanged { id } => {
+                Some(DataChange::AddVertex {
+                    id: *id,
+                    properties: HashMap::new(),
+                })
+            }
+            DataChangeEvent::VertexRemoved { id } => {
+                Some(DataChange::RemoveVertex {
+                    id: *id,
+                    properties: HashMap::new(),
+                })
+            }
+            DataChangeEvent::EdgeChanged { edge } => {
+                Some(DataChange::AddEdge {
+                    edge: edge.clone(),
+                    properties: HashMap::new(),
+                })
+            }
+            DataChangeEvent::EdgeRemoved { edge } => {
+                Some(DataChange::RemoveEdge {
+                    edge: edge.clone(),
+                    properties: HashMap::new(),
+                })
+            }
+        }
     }
 }
 

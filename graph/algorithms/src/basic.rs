@@ -3,8 +3,8 @@
 //! This module provides fundamental graph algorithms that work directly
 //! with GraphStorage without requiring streaming features.
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::cmp::Ordering;
 
 use graph_core::{VertexId, Edge, Properties, PropertyValue};
 use graph_storage::GraphStorage;
@@ -241,8 +241,34 @@ impl DijkstraResult {
     }
 }
 
-/// Dijkstra shortest path algorithm
-/// 
+/// Priority queue entry for Dijkstra (min-heap via Reverse ordering)
+#[derive(Debug, Clone)]
+struct HeapEntry {
+    dist: f64,
+    vertex: VertexId,
+}
+
+impl PartialEq for HeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.dist == other.dist && self.vertex == other.vertex
+    }
+}
+impl Eq for HeapEntry {}
+
+impl PartialOrd for HeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for HeapEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse ordering for min-heap (BinaryHeap is a max-heap by default)
+        other.dist.partial_cmp(&self.dist).unwrap_or(Ordering::Equal)
+    }
+}
+
+/// Dijkstra shortest path algorithm using BinaryHeap for O((V+E) log V) complexity
+///
 /// # Arguments
 /// * `storage` - Graph storage
 /// * `start` - Starting vertex
@@ -257,46 +283,35 @@ pub fn compute_shortest_path(
     let mut distances: HashMap<VertexId, f64> = HashMap::new();
     let mut previous: HashMap<VertexId, VertexId> = HashMap::new();
     let mut visited: HashSet<VertexId> = HashSet::new();
-    
-    // Priority queue: (distance, vertex_id)
-    let mut queue: VecDeque<(f64, VertexId)> = VecDeque::new();
-    
+
+    let mut heap = BinaryHeap::new();
+
     distances.insert(start, 0.0);
-    queue.push_back((0.0, start));
-    
-    while let Some((current_dist, current)) = queue.pop_front() {
+    heap.push(HeapEntry { dist: 0.0, vertex: start });
+
+    while let Some(HeapEntry { dist: current_dist, vertex: current }) = heap.pop() {
         if visited.contains(&current) {
             continue;
         }
-        
+
         visited.insert(current);
-        
-        // Check if we reached the target
+
+        // Early termination: when target is popped from heap, it has the shortest distance
         if let Some(target) = end {
             if current == target {
-                let path = if visited.contains(&target) {
-                    reconstruct_path(&previous, start, target)
-                } else {
-                    None
-                };
-                
-                return Ok(DijkstraResult {
-                    distances,
-                    previous,
-                    path,
-                });
+                let path = reconstruct_path(&previous, start, target);
+                return Ok(DijkstraResult { distances, previous, path });
             }
         }
-        
-        // Get outgoing neighbors
+
+        // Get outgoing neighbors (O(degree) with adjacency index)
         let neighbors = storage.get_out_neighbors(current)?;
-        
-        for (neighbor_id, edge, edge_props) in neighbors {
+
+        for (neighbor_id, _edge, edge_props) in neighbors {
             if visited.contains(&neighbor_id) {
                 continue;
             }
-            
-            // Get edge weight
+
             let weight = if let Some(prop_name) = weight_property {
                 edge_props.get(prop_name)
                     .and_then(|v| match v {
@@ -308,41 +323,20 @@ pub fn compute_shortest_path(
             } else {
                 1.0
             };
-            
+
             let new_dist = current_dist + weight;
-            
+
             if !distances.contains_key(&neighbor_id) || new_dist < distances[&neighbor_id] {
                 distances.insert(neighbor_id, new_dist);
                 previous.insert(neighbor_id, current);
-                queue.push_back((new_dist, neighbor_id));
+                heap.push(HeapEntry { dist: new_dist, vertex: neighbor_id });
             }
         }
-        
-        // Sort queue by distance (simple implementation)
-        let mut queue_vec: Vec<(f64, VertexId)> = queue.drain(..).collect();
-        queue_vec.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        queue = queue_vec.into_iter().collect();
     }
-    
-    // If we had a target but didn't reach it
-    if let Some(target) = end {
-        if !distances.contains_key(&target) {
-            return Ok(DijkstraResult {
-                distances,
-                previous,
-                path: None,
-            });
-        }
-    }
-    
-    // Compute path before moving previous into result
+
     let path = end.and_then(|target| reconstruct_path(&previous, start, target));
-    
-    Ok(DijkstraResult {
-        distances,
-        previous,
-        path,
-    })
+
+    Ok(DijkstraResult { distances, previous, path })
 }
 
 /// Reconstruct path from previous mapping
@@ -396,6 +390,7 @@ pub fn run_with_timing<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use graph_storage::GraphOperation;
     use graph_core::props;
 

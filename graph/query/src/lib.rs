@@ -4,9 +4,7 @@
 //! supporting Cypher-like syntax for graph database operations.
 
 use std::collections::HashMap;
-use std::str::FromStr;
-
-use graph_core::{PropertyValue, Edge, VertexId};
+use graph_core::PropertyValue;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -650,7 +648,7 @@ pub struct GQLParser;
 
 #[cfg(not(feature = "pest"))]
 impl GQLParser {
-    pub fn parse_query(input: &str) -> Result<Statement, String> {
+    pub fn parse_query(_input: &str) -> Result<Statement, String> {
         Err("GQL parsing requires 'pest' feature to be enabled".to_string())
     }
 }

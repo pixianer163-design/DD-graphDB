@@ -45,6 +45,11 @@ pub enum QueryPattern {
         direction: Option<String>, // "outbound", "inbound", "both"
         depth: Option<usize>,
     },
+
+    /// Hybrid combination of multiple patterns
+    Hybrid {
+        base_patterns: Vec<QueryPattern>,
+    },
 }
 
 /// Routing decision for a query pattern
@@ -144,21 +149,9 @@ impl QueryRouter {
     }
 
     /// Route a query pattern to the best materialized view
-    pub fn route_query(&mut self, pattern: &QueryPattern) -> Result<RoutingDecision, ViewError> {
-        let pattern_key = self.pattern_to_key(pattern);
-        
-        // Check cache first
-        if let Some(cached_decision) = self.pattern_cache.get(&pattern_key) {
-            return Ok(cached_decision.clone());
-        }
-
+    pub fn route_query(&self, pattern: &QueryPattern) -> Result<RoutingDecision, ViewError> {
         // Find best matching view
-        let best_match = self.find_best_matching_view(pattern)?;
-        
-        // Cache the decision
-        self.pattern_cache.insert(pattern_key, best_match.clone());
-        
-        Ok(best_match)
+        self.find_best_matching_view(pattern)
     }
 
     /// Find the best matching view for a query pattern
@@ -239,6 +232,14 @@ impl QueryRouter {
                 }
             }
             
+            // Hybrid query patterns match views that handle their sub-patterns
+            (QueryPattern::Hybrid { base_patterns }, _) => {
+                base_patterns.iter()
+                    .map(|bp| self.calculate_match_score(bp, view_type))
+                    .max()
+                    .unwrap_or(0)
+            }
+
             // Hybrid views can handle multiple patterns
             (_, ViewType::Hybrid { base_types }) => {
                 // Calculate best score among base types
@@ -312,6 +313,9 @@ impl QueryRouter {
             }
             QueryPattern::EdgeTraversal { start_vertex, edge_types, direction, depth } => {
                 format!("traverse:{:?}:{:?}:{:?}:{:?}", start_vertex, edge_types, direction, depth)
+            }
+            QueryPattern::Hybrid { base_patterns } => {
+                format!("hybrid:{:?}", base_patterns)
             }
         }
     }
@@ -461,6 +465,15 @@ impl QueryRouter {
                     vertices: std::collections::HashMap::new(),
                 }
             }
+            QueryPattern::Hybrid { base_patterns } => {
+                if let Some(first) = base_patterns.first() {
+                    self.create_warm_up_data(first)
+                } else {
+                    ViewCacheData::VertexLookup {
+                        vertices: std::collections::HashMap::new(),
+                    }
+                }
+            }
         }
     }
 
@@ -485,7 +498,6 @@ impl Default for QueryRouter {
 mod tests {
     use super::*;
     use crate::{RefreshPolicy, ViewSizeMetrics};
-    use std::time::Duration;
 
     #[test]
     fn test_query_router_creation() {

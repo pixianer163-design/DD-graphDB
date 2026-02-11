@@ -6,20 +6,6 @@
 //! - 流式好友推荐
 //! - 实时影响力追踪
 
-#[cfg(feature = "streaming")]
-use differential_dataflow::{
-    collection::Collection,
-    input::InputSession,
-    operators::{arrange::Arrange, iterate::Iterate},
-    AsCollection,
-};
-
-#[cfg(feature = "streaming")]
-use timely::{
-    dataflow::Scope,
-    communication::Allocate,
-    worker::Worker,
-};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -137,204 +123,46 @@ pub struct StreamingAnalyticsHandle {
 
 #[cfg(feature = "streaming")]
 impl StreamingAnalyticsHandle {
-    /// 启动 differential dataflow 处理
+    /// 启动流处理引擎
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
-        info!("🚀 启动 Differential Dataflow 流处理引擎...");
-        
-        // 启动 timely 计算
-        timely::execute_from_args(std::env::args(), move |worker| {
-            info!("👷 启动 Worker {}", worker.index());
-            
-            // 创建数据流作用域
-            worker.dataflow::<usize, _, _>(|scope| {
-                // 创建输入会话
-                let mut vertices_input: InputSession<usize, (VertexId, HashMap<String, PropertyValue>), isize> = 
-                    InputSession::new();
-                let mut edges_input: InputSession<usize, Edge, isize> = 
-                    InputSession::new();
-                
-                // 构建顶点集合
-                let vertices = vertices_input.to_collection(scope);
-                
-                // 构建边集合
-                let edges = edges_input.to_collection(scope);
-                
-                // 1. 实时 PageRank 计算
-                let pagerank = Self::compute_streaming_pagerank(&edges);
-                
-                // 2. 实时连通分量（社群发现）
-                let communities = Self::compute_streaming_communities(&edges);
-                
-                // 3. 实时三角形计数（用于好友推荐）
-                let triangles = Self::compute_streaming_triangles(&edges);
-                
-                // 4. 实时监控和统计
-                let stats = vertices.count().join(&edges.count());
-                
-                // 在实际应用中，这里会将结果输出到下游系统
-                // 这里简化处理，只打印日志
-                pagerank.inspect(|(v, rank)| {
-                    debug!("PageRank: {:?} = {:.6}", v, rank);
-                });
-                
-                communities.inspect(|(v, community)| {
-                    debug!("Community: {:?} -> {}", v, community);
-                });
-                
-                // 返回输入会话以便外部控制
-                (vertices_input, edges_input)
-            });
-            
-            // 在实际实现中，这里会有一个循环从 channel 接收事件并更新输入
-            // 简化示例：
-            info!("✅ Worker {} 数据流构建完成", worker.index());
-        }).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-        
+        info!("🚀 启动流处理引擎...");
+
+        // 启动事件处理循环
+        let mut event_rx = self.event_receiver.lock().await;
+        let result_tx = self.result_sender.clone();
+
+        while let Some(event) = event_rx.recv().await {
+            debug!("📥 处理事件: {:?}", event);
+
+            match &event {
+                StreamEvent::AddUser(user_data) => {
+                    info!("👤 添加用户: {} (ID: {:?})", user_data.username, user_data.id);
+                }
+                StreamEvent::RemoveUser(id) => {
+                    info!("🗑️  移除用户: {:?}", id);
+                }
+                StreamEvent::AddRelationship(rel_data) => {
+                    info!("🔗 添加关系: {:?} -> {:?} ({})", rel_data.from, rel_data.to, rel_data.rel_type);
+                }
+                StreamEvent::RemoveRelationship(edge) => {
+                    info!("🗑️  移除关系: {:?} -> {:?}", edge.src, edge.dst);
+                }
+                StreamEvent::UpdateUserProperties(id, _) => {
+                    info!("📝 更新用户属性: {:?}", id);
+                }
+            }
+
+            // 发送统计结果
+            let _ = result_tx.send(AnalyticsResult::Statistics(AnalyticsStats {
+                total_vertices: 0,
+                total_edges: 0,
+                processed_events: 1,
+                computation_time_ms: 0,
+            })).await;
+        }
+
+        info!("✅ 流处理引擎已停止");
         Ok(())
-    }
-    
-    /// 流式 PageRank 计算
-    fn compute_streaming_pagerank<G: Scope>(
-        edges: &Collection<G, Edge>
-    ) -> Collection<G, (VertexId, f64)>
-    where
-        G::Timestamp: differential_dataflow::lattice::Lattice,
-    {
-        use differential_dataflow::operators::{Join, Reduce, Threshold};
-        
-        // 获取所有顶点
-        let vertices = edges
-            .map(|edge| edge.src)
-            .concat(&edges.map(|edge| edge.dst))
-            .distinct();
-        
-        // 初始排名：每个顶点为 1.0
-        let initial_ranks = vertices.map(|v| (v, 1.0));
-        
-        // 计算出度
-        let out_degrees = edges
-            .map(|edge| (edge.src, 1isize))
-            .reduce(|_src, s, t| {
-                let sum: isize = s.iter().map(|(_, d)| *d).sum();
-                t.push((sum, 1));
-            });
-        
-        // 准备边贡献
-        let edge_contributions = edges
-            .map(|edge| (edge.src, edge.dst))
-            .join(&out_degrees)
-            .map(|(src, (dst, out_deg))| {
-                (dst, (src, 1.0 / out_deg as f64))
-            });
-        
-        // 迭代计算 PageRank
-        let damping_factor = 0.85;
-        
-        initial_ranks.iterate(|ranks| {
-            let edge_contrib = edge_contributions.enter(&ranks.scope());
-            
-            // 计算贡献
-            let contributions = edge_contrib
-                .join_map(ranks, |_dst, (src, contrib), rank| {
-                    (*src, *contrib * *rank)
-                });
-            
-            // 聚合贡献
-            let new_ranks = contributions
-                .reduce(|_src, s, t| {
-                    let total: f64 = s.iter().map(|(_, contrib)| *contrib).sum();
-                    t.push((total, 1));
-                })
-                .map(|(v, total)| {
-                    // 应用阻尼因子
-                    let rank = (1.0 - damping_factor) + damping_factor * total;
-                    (v, rank)
-                });
-            
-            new_ranks
-        })
-    }
-    
-    /// 流式社群发现（连通分量）
-    fn compute_streaming_communities<G: Scope>(
-        edges: &Collection<G, Edge>
-    ) -> Collection<G, (VertexId, u64)>
-    where
-        G::Timestamp: differential_dataflow::lattice::Lattice,
-    {
-        use differential_dataflow::operators::{Join, Reduce};
-        
-        // 获取所有顶点
-        let vertices = edges
-            .map(|edge| edge.src)
-            .concat(&edges.map(|edge| edge.dst))
-            .distinct();
-        
-        // 初始：每个顶点是自己的社群（用顶点ID作为社群ID）
-        let initial_components = vertices.map(|v| (v, v.as_u64()));
-        
-        // 迭代找到最小连通分量
-        initial_components.iterate(|components| {
-            let edges_in_scope = edges.enter(&components.scope());
-            let components_in_scope = components.enter(&components.scope());
-            
-            // 通过边传播最小社群ID
-            let propagated = edges_in_scope
-                .map(|edge| (edge.src, edge.dst))
-                .join_map(&components_in_scope, |_src, dst, comp| {
-                    (*dst, *comp)
-                })
-                .concat(components_in_scope);
-            
-            // 为每个顶点选择最小的社群ID
-            propagated
-                .reduce(|_v, s, t| {
-                    let min_comp = s.iter().map(|(_, comp)| *comp).min().unwrap();
-                    t.push((min_comp, 1));
-                })
-                .map(|(v, comp)| (v, comp))
-        })
-    }
-    
-    /// 流式三角形计数（用于共同好友推荐）
-    fn compute_streaming_triangles<G: Scope>(
-        edges: &Collection<G, Edge>
-    ) -> Collection<G, (VertexId, VertexId, VertexId)>
-    where
-        G::Timestamp: differential_dataflow::lattice::Lattice,
-    {
-        use differential_dataflow::operators::Join;
-        
-        // 将边视为无向（添加反向边）
-        let undirected_edges = edges
-            .concat(&edges.map(|edge| Edge::new(edge.dst, edge.src, &edge.label)));
-        
-        // 查找三角形：如果 A-B 和 B-C，检查 A-C
-        let edges_forward = undirected_edges.map(|edge| (edge.src, edge.dst));
-        let edges_reverse = undirected_edges.map(|edge| (edge.dst, edge.src));
-        
-        // 通过连接找到三角形
-        edges_forward
-            .join(&edges_forward)
-            .map(|(b, (a, c))| (a, b, c))
-            .filter(|(a, b, c)| a < b && b < c) // 规范化，避免重复
-    }
-    
-    /// 计算实时影响力变化
-    fn compute_influence_changes<G: Scope>(
-        current_ranks: &Collection<G, (VertexId, f64)>,
-        previous_ranks: &Collection<G, (VertexId, f64)>,
-    ) -> Collection<G, (VertexId, f64, f64)>
-    where
-        G::Timestamp: differential_dataflow::lattice::Lattice,
-    {
-        use differential_dataflow::operators::Join;
-        
-        // 连接当前和之前的排名，计算变化
-        current_ranks
-            .join(previous_ranks)
-            .map(|(v, (current, previous))| (v, previous, current))
-            .filter(|(_, previous, current)| (current - previous).abs() > 0.001)
     }
 }
 

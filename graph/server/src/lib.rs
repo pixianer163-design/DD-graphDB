@@ -17,8 +17,6 @@ pub use crate::core::GraphServer;
 /// Core server implementation
 pub mod core {
     use super::*;
-    use graph_core::{VertexId, Edge, Properties};
-
     /// Main graph database server
     pub struct GraphServer {
         storage: Arc<RwLock<GraphStorage>>,
@@ -286,8 +284,8 @@ mod tests {
 
     #[test]
     fn test_stats_retrieval() {
-        let server = GraphServer::new();
-        
+        let _server = GraphServer::new();
+
         // This would be an async test in a real scenario
         // For now, just test the method exists
         assert!(true);

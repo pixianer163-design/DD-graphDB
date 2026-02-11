@@ -129,7 +129,7 @@ impl MaterializedView {
             size_metrics,
             optimization_hints: vec![OptimizationHint::PreferSpeed],
             created_at: std::time::SystemTime::now(),
-            last_refreshed: std::time::SystemTime::now(),
+            last_refreshed: std::time::UNIX_EPOCH,
         }
     }
 

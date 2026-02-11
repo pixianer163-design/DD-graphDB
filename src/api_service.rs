@@ -26,12 +26,14 @@ use tokio::sync::RwLock;
 use tracing::{info, error};
 use tower_http::trace::TraceLayer;
 
-// 复用社交网络平台代码
-use crate::social_network_platform::{
-    SocialNetworkPlatform, PlatformConfig, UserProfile, 
-    RelationshipType, InfluenceResult, CommunityResult, PlatformStats
+// 复用社交网络平台代码 (included as a module)
+#[path = "social_network_platform.rs"]
+mod social_network_platform;
+use social_network_platform::{
+    SocialNetworkPlatform, PlatformConfig, UserProfile,
+    RelationshipType, PlatformStats
 };
-use graph_core::{VertexId, props};
+use graph_core::VertexId;
 
 /// 应用状态
 #[derive(Clone)]
@@ -251,56 +253,47 @@ async fn create_user(
 async fn get_user(
     State(state): State<AppState>,
     Path(user_id): Path<String>,
-) -> impl IntoResponse {
+) -> (StatusCode, Json<serde_json::Value>) {
     info!("🔍 查询用户: {}", user_id);
-    
+
     // 解析用户ID
     let vertex_id = match user_id.parse::<u64>() {
         Ok(id) => VertexId::new(id),
         Err(_) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: "Invalid user ID".to_string(),
-                    message: "User ID must be a valid u64".to_string(),
-                })
+                Json(serde_json::json!({"error": "Invalid user ID", "message": "User ID must be a valid u64"})),
             );
         }
     };
-    
+
     let platform = state.platform.read().await;
-    
+
     match platform.get_user_profile(vertex_id).await {
         Ok(Some(profile)) => {
             (
                 StatusCode::OK,
-                Json(UserProfileResponse {
-                    id: format!("{:?}", profile.id),
-                    username: profile.username,
-                    display_name: profile.display_name,
-                    bio: profile.bio,
-                    follower_count: profile.follower_count,
-                    following_count: profile.following_count,
-                })
+                Json(serde_json::json!({
+                    "id": format!("{:?}", profile.id),
+                    "username": profile.username,
+                    "display_name": profile.display_name,
+                    "bio": profile.bio,
+                    "follower_count": profile.follower_count,
+                    "following_count": profile.following_count,
+                })),
             )
         }
         Ok(None) => {
             (
                 StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "User not found".to_string(),
-                    message: format!("No user found with ID: {}", user_id),
-                })
+                Json(serde_json::json!({"error": "User not found", "message": format!("No user found with ID: {}", user_id)})),
             )
         }
         Err(e) => {
             error!("❌ 查询用户失败: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Query failed".to_string(),
-                    message: format!("Failed to get user: {}", e),
-                })
+                Json(serde_json::json!({"error": "Query failed", "message": format!("Failed to get user: {}", e)})),
             )
         }
     }
@@ -441,44 +434,44 @@ async fn get_communities(
 async fn get_recommendations(
     State(state): State<AppState>,
     Path(user_id): Path<String>,
-) -> impl IntoResponse {
+) -> (StatusCode, Json<serde_json::Value>) {
     info!("🎯 获取好友推荐: {}", user_id);
-    
+
     let vertex_id = match user_id.parse::<u64>() {
         Ok(id) => VertexId::new(id),
         Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Invalid user ID"}))),
     };
-    
+
     let platform = state.platform.read().await;
-    
+
     match platform.get_friend_recommendations(vertex_id, 10).await {
         Ok(recommendations) => {
-            let items: Vec<RecommendationItem> = recommendations
+            let items: Vec<serde_json::Value> = recommendations
                 .into_iter()
-                .map(|(id, score)| RecommendationItem {
-                    user_id: format!("{:?}", id),
-                    username: format!("user_{:?}", id),
-                    score,
-                    reason: "Common connections".to_string(),
-                })
+                .map(|(id, score)| serde_json::json!({
+                    "user_id": format!("{:?}", id),
+                    "username": format!("user_{:?}", id),
+                    "score": score,
+                    "reason": "Common connections",
+                }))
                 .collect();
-            
+
             (
                 StatusCode::OK,
-                Json(RecommendationsResponse {
-                    user_id,
-                    recommendations: items,
-                })
+                Json(serde_json::json!({
+                    "user_id": user_id,
+                    "recommendations": items,
+                })),
             )
         }
         Err(e) => {
             error!("❌ 获取推荐失败: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(RecommendationsResponse {
-                    user_id,
-                    recommendations: vec![],
-                })
+                Json(serde_json::json!({
+                    "user_id": user_id,
+                    "recommendations": [],
+                })),
             )
         }
     }
@@ -528,10 +521,11 @@ async fn bulk_import(
     State(state): State<AppState>,
     Json(req): Json<BulkImportRequest>,
 ) -> impl IntoResponse {
-    info!("📥 批量导入请求: {} 个用户", req.users.len());
-    
+    let user_count = req.users.len();
+    info!("📥 批量导入请求: {} 个用户", user_count);
+
     let platform = state.platform.read().await;
-    
+
     // 转换请求为用户资料
     let profiles: Vec<UserProfile> = req.users.into_iter().enumerate().map(|(i, u)| {
         UserProfile {
@@ -544,7 +538,7 @@ async fn bulk_import(
             join_timestamp: chrono::Utc::now().timestamp(),
         }
     }).collect();
-    
+
     match platform.bulk_import_users(profiles).await {
         Ok(count) => {
             info!("✅ 批量导入成功: {} 个用户", count);
@@ -555,7 +549,7 @@ async fn bulk_import(
                     imported_count: count,
                     failed_count: 0,
                     message: format!("Successfully imported {} users", count),
-                })
+                }),
             )
         }
         Err(e) => {
@@ -565,9 +559,9 @@ async fn bulk_import(
                 Json(BulkImportResponse {
                     success: false,
                     imported_count: 0,
-                    failed_count: req.users.len(),
+                    failed_count: user_count,
                     message: format!("Import failed: {}", e),
-                })
+                }),
             )
         }
     }

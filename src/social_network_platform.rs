@@ -15,7 +15,7 @@ use tracing::{info, warn, error};
 
 // 图数据库核心模块
 use graph_core::{VertexId, Edge, PropertyValue, props};
-use graph_storage::{GraphStorage, GraphOperation, Transaction};
+use graph_storage::{GraphStorage, GraphOperation};
 
 // Views 模块 - 物化视图和增量计算
 #[cfg(feature = "views")]
@@ -27,11 +27,6 @@ use graph_views::{
     DependencyGraph, DependencyType,
 };
 
-// 算法模块
-#[cfg(feature = "streaming")]
-use graph_algorithms::{
-    reachability, pagerank, connected_components, triangle_count,
-};
 
 /// 社交网络平台主应用
 pub struct SocialNetworkPlatform {

@@ -3,8 +3,9 @@
 //! This demo demonstrates the query execution engine with various GQL queries
 
 use std::sync::Arc;
+use std::collections::HashMap;
 
-use graph_core::{VertexId, Edge, props};
+use graph_core::{VertexId, Edge, PropertyValue, props};
 use graph_storage::{GraphStorage, GraphOperation};
 use graph_query::{
     QueryExecutor, Statement,
@@ -50,70 +51,70 @@ fn create_test_data() -> Result<Arc<GraphStorage>, Box<dyn std::error::Error>> {
     // Create Alice (Software Engineer, Senior, age 30)
     transaction.add_operation(GraphOperation::AddVertex {
         id: VertexId::new(1),
-        properties: props::map(vec![
-            ("name", "Alice"),
-            ("type", "Person"),
-            ("role", "Software Engineer"),
-            ("level", "Senior"),
-            ("age", 30i64),
-            ("department", "Engineering"),
+        properties: HashMap::from([
+            ("name".to_string(), props::string("Alice")),
+            ("type".to_string(), props::string("Person")),
+            ("role".to_string(), props::string("Software Engineer")),
+            ("level".to_string(), props::string("Senior")),
+            ("age".to_string(), props::int64(30)),
+            ("department".to_string(), props::string("Engineering")),
         ]),
     });
-    
+
     // Create Bob (Software Engineer, Junior, age 25)
     transaction.add_operation(GraphOperation::AddVertex {
         id: VertexId::new(2),
-        properties: props::map(vec![
-            ("name", "Bob"),
-            ("type", "Person"),
-            ("role", "Software Engineer"),
-            ("level", "Junior"),
-            ("age", 25i64),
-            ("department", "Engineering"),
+        properties: HashMap::from([
+            ("name".to_string(), props::string("Bob")),
+            ("type".to_string(), props::string("Person")),
+            ("role".to_string(), props::string("Software Engineer")),
+            ("level".to_string(), props::string("Junior")),
+            ("age".to_string(), props::int64(25)),
+            ("department".to_string(), props::string("Engineering")),
         ]),
     });
-    
+
     // Create Charlie (Product Manager, age 35)
     transaction.add_operation(GraphOperation::AddVertex {
         id: VertexId::new(3),
-        properties: props::map(vec![
-            ("name", "Charlie"),
-            ("type", "Person"),
-            ("role", "Product Manager"),
-            ("age", 35i64),
-            ("department", "Product"),
+        properties: HashMap::from([
+            ("name".to_string(), props::string("Charlie")),
+            ("type".to_string(), props::string("Person")),
+            ("role".to_string(), props::string("Product Manager")),
+            ("age".to_string(), props::int64(35)),
+            ("department".to_string(), props::string("Product")),
         ]),
     });
-    
+
     // Create David (Designer, age 28)
     transaction.add_operation(GraphOperation::AddVertex {
         id: VertexId::new(4),
-        properties: props::map(vec![
-            ("name", "David"),
-            ("type", "Person"),
-            ("role", "Designer"),
-            ("age", 28i64),
-            ("department", "Design"),
+        properties: HashMap::from([
+            ("name".to_string(), props::string("David")),
+            ("type".to_string(), props::string("Person")),
+            ("role".to_string(), props::string("Designer")),
+            ("age".to_string(), props::int64(28)),
+            ("department".to_string(), props::string("Design")),
         ]),
     });
-    
+
     // Create Eve (CTO, age 40)
     transaction.add_operation(GraphOperation::AddVertex {
         id: VertexId::new(5),
-        properties: props::map(vec![
-            ("name", "Eve"),
-            ("type", "Person"),
-            ("role", "CTO"),
-            ("age", 40i64),
-            ("department", "Engineering"),
+        properties: HashMap::from([
+            ("name".to_string(), props::string("Eve")),
+            ("type".to_string(), props::string("Person")),
+            ("role".to_string(), props::string("CTO")),
+            ("age".to_string(), props::int64(40)),
+            ("department".to_string(), props::string("Engineering")),
         ]),
     });
-    
+
     // Create relationships
     // Alice manages Bob
     transaction.add_operation(GraphOperation::AddEdge {
         edge: Edge::new(VertexId::new(1), VertexId::new(2), "manages"),
-        properties: props::map(vec![("since", 2022i64)]),
+        properties: HashMap::from([("since".to_string(), props::int64(2022))]),
     });
     
     // Bob works with Charlie

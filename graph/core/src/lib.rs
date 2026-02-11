@@ -40,9 +40,9 @@ impl std::fmt::Display for VertexId {
 
 impl std::str::FromStr for VertexId {
     type Err = std::num::ParseIntError;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_str(s)
+        Ok(VertexId(s.parse()?))
     }
 }
 
@@ -102,7 +102,7 @@ impl Edge {
 }
 
 /// Property value that can be stored on vertices and edges
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum PropertyValue {
     /// String value
@@ -118,6 +118,24 @@ pub enum PropertyValue {
     /// Null value
     Null,
 }
+
+// Custom PartialEq: treats NaN == NaN via bit comparison so that
+// Hash contract is satisfied (a == b => hash(a) == hash(b))
+impl PartialEq for PropertyValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (PropertyValue::String(a), PropertyValue::String(b)) => a == b,
+            (PropertyValue::Int64(a), PropertyValue::Int64(b)) => a == b,
+            (PropertyValue::Float64(a), PropertyValue::Float64(b)) => a.to_bits() == b.to_bits(),
+            (PropertyValue::Bool(a), PropertyValue::Bool(b)) => a == b,
+            (PropertyValue::Vec(a), PropertyValue::Vec(b)) => a == b,
+            (PropertyValue::Null, PropertyValue::Null) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for PropertyValue {}
 
 impl PropertyValue {
     /// Create a string property
@@ -238,7 +256,10 @@ impl Hash for PropertyValue {
             }
             PropertyValue::Float64(f) => {
                 2u8.hash(state);
-                f.to_bits().hash(state);
+                // Canonicalize NaN to a single bit pattern so all NaN values
+                // hash identically (required by Hash contract: a == b => hash(a) == hash(b))
+                let bits = if f.is_nan() { f64::NAN.to_bits() } else { f.to_bits() };
+                bits.hash(state);
             }
             PropertyValue::Bool(b) => {
                 3u8.hash(state);

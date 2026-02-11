@@ -93,8 +93,8 @@ pub enum AggregationFunction {
     Max(String), // field name
     /// Distinct count
     Distinct(String), // field name
-    /// Custom aggregation (not Clone-able)
-    Custom(String, Box<dyn Fn(&[StreamEvent]) -> PropertyValue>),
+    /// Custom aggregation (uses Arc for safe cloning)
+    Custom(String, Arc<dyn Fn(&[StreamEvent]) -> PropertyValue + Send + Sync>),
 }
 
 impl std::fmt::Debug for AggregationFunction {
@@ -120,7 +120,7 @@ impl Clone for AggregationFunction {
             Self::Min(field) => Self::Min(field.clone()),
             Self::Max(field) => Self::Max(field.clone()),
             Self::Distinct(field) => Self::Distinct(field.clone()),
-            Self::Custom(name, _) => Self::Custom(name.clone(), Box::new(|_| PropertyValue::Null)), // Default implementation
+            Self::Custom(name, func) => Self::Custom(name.clone(), Arc::clone(func)),
         }
     }
 }
@@ -645,7 +645,7 @@ mod tests {
         let sum_fn = AggregationFunction::Sum("value".to_string());
         assert!(matches!(sum_fn, AggregationFunction::Sum(_)));
 
-        let custom_fn = AggregationFunction::Custom("custom".to_string(), Box::new(|_| PropertyValue::int64(42)));
+        let custom_fn = AggregationFunction::Custom("custom".to_string(), Arc::new(|_| PropertyValue::int64(42)));
         assert!(matches!(custom_fn, AggregationFunction::Custom(_, _)));
     }
 }

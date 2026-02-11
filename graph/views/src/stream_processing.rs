@@ -507,29 +507,17 @@ impl StreamProcessor {
         }
 
         // Start worker threads
-        // Temporarily disabled due to Send/Sync requirements
-        // for worker_id in 0..self.config.worker_count {
-        //     let engine = self.incremental_engine.clone();
-        //     let buffer = self.input_buffer.clone();
-        //     let config = self.config.clone();
-        //     
-        //     let handle = tokio::spawn(async move {
-        //         Self::worker_task(worker_id, engine, buffer, config).await;
-        //     });
-        //     
-        //     self.workers.push(handle);
-        // }
-        
-        // Temporarily disabled due to Send/Sync requirements
-        // // Start monitoring task
-        // let monitor_handle = tokio::spawn(async move {
-        //     while let Some(()) = flush_rx.recv().await {
-        //         // Buffer was flushed, could trigger additional processing
-        //         tokio::time::sleep(Duration::from_millis(10)).await;
-        //     }
-        // });
-        
-        // self.workers.push(monitor_handle);
+        for worker_id in 0..self.config.worker_count {
+            let engine = self.incremental_engine.clone();
+            let buffer = self.input_buffer.clone();
+            let config = self.config.clone();
+
+            let handle = tokio::spawn(async move {
+                Self::worker_task(worker_id, engine, buffer, config).await;
+            });
+
+            self.workers.push(handle);
+        }
 
         println!("✅ Stream processor started with {} workers", self.config.worker_count);
         Ok(())
@@ -736,8 +724,9 @@ pub struct StreamProcessorStats {
 
 /// Get number of available CPU cores
 fn get_num_cpus() -> usize {
-    // std::thread::available_parallelism().unwrap_or(NonZeroUsize::new(1).unwrap()).get()
-    4 // Default to 4 CPUs for now
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
 }
 
 #[cfg(test)]

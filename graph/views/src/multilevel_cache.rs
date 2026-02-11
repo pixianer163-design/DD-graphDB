@@ -4,6 +4,7 @@
 //! designed for sub-millisecond query performance in materialized views.
 
 use std::collections::{HashMap, VecDeque};
+// VecDeque still used by AdaptiveCache
 
 use std::time::{Duration, Instant};
 use std::hash::Hash;
@@ -147,11 +148,14 @@ impl CacheStats {
     }
 }
 
-/// High-performance LRU cache
+/// High-performance LRU cache with O(1) access-order tracking
 #[derive(Debug)]
 pub struct LruCache<K: Hash + Eq, V: Clone> {
     entries: HashMap<K, CacheEntry<V>>,
-    access_order: VecDeque<K>,
+    /// Tracks access order using a monotonic counter. Higher = more recent.
+    access_counter: HashMap<K, u64>,
+    /// Monotonic counter for access ordering
+    next_access_id: u64,
     config: CacheConfig,
     current_size: usize,
     stats: CacheStats,
@@ -162,57 +166,61 @@ impl<K: Hash + Eq + Clone, V: Clone> LruCache<K, V> {
     pub fn new(config: CacheConfig) -> Self {
         Self {
             entries: HashMap::new(),
-            access_order: VecDeque::new(),
+            access_counter: HashMap::new(),
+            next_access_id: 0,
             config,
             current_size: 0,
             stats: CacheStats::default(),
         }
     }
 
-    /// Get value and update LRU order
+    /// Get value and update LRU order - O(1)
     pub fn get(&mut self, key: &K) -> Option<V> {
-        if let Some(mut entry) = self.entries.get(key).cloned() {
+        if let Some(entry) = self.entries.get_mut(key) {
             if entry.is_expired() {
-                self.remove(key);
+                let removed = self.entries.remove(key);
+                self.access_counter.remove(key);
+                if let Some(removed_entry) = removed {
+                    self.current_size = self.current_size.saturating_sub(removed_entry.size_bytes);
+                }
                 return None;
             }
-            
+
             entry.access();
-            self.update_access_order(key);
+            self.access_counter.insert(key.clone(), self.next_access_id);
+            self.next_access_id += 1;
             self.stats.hits += 1;
-            Some(entry.data)
+            Some(entry.data.clone())
         } else {
             self.stats.misses += 1;
             None
         }
     }
 
-    /// Put value and update LRU order
+    /// Put value - O(1) amortized
     pub fn put(&mut self, key: K, value: V, size_bytes: usize) -> Option<()> {
-        // Check if we need to evict
-        let entry_size = size_bytes;
-        if self.current_size + entry_size > self.config.max_size_bytes {
-            self.evict_for_size(entry_size);
+        if self.current_size + size_bytes > self.config.max_size_bytes {
+            self.evict_for_size(size_bytes);
         }
 
         // Remove existing entry
-        if self.entries.contains_key(&key) {
-            self.remove(&key);
+        if let Some(old) = self.entries.remove(&key) {
+            self.current_size = self.current_size.saturating_sub(old.size_bytes);
         }
 
-        // Add new entry
-        let entry = CacheEntry::new(value, entry_size, self.config.default_ttl);
+        let entry = CacheEntry::new(value, size_bytes, self.config.default_ttl);
         self.entries.insert(key.clone(), entry);
-        self.access_order.push_back(key);
-        self.current_size += entry_size;
-        
+        self.access_counter.insert(key, self.next_access_id);
+        self.next_access_id += 1;
+        self.current_size += size_bytes;
+
         Some(())
     }
 
-    /// Remove entry
+    /// Remove entry - O(1)
     pub fn remove(&mut self, key: &K) -> Option<V> {
+        self.access_counter.remove(key);
         if let Some(entry) = self.entries.remove(key) {
-            self.access_order.retain(|k| k != key);
             self.current_size = self.current_size.saturating_sub(entry.size_bytes);
             Some(entry.data)
         } else {
@@ -223,7 +231,7 @@ impl<K: Hash + Eq + Clone, V: Clone> LruCache<K, V> {
     /// Clear cache
     pub fn clear(&mut self) {
         self.entries.clear();
-        self.access_order.clear();
+        self.access_counter.clear();
         self.current_size = 0;
     }
 
@@ -241,20 +249,23 @@ impl<K: Hash + Eq + Clone, V: Clone> LruCache<K, V> {
         self.current_size
     }
 
-    /// Update access order for LRU
-    fn update_access_order(&mut self, key: &K) {
-        self.access_order.retain(|k| k != key);
-        self.access_order.push_back(key.clone());
-    }
-
-    /// Evict entries to make room
+    /// Evict least recently used entries to make room
+    /// Finds minimum access_id (O(N) only during eviction, not on every access)
     fn evict_for_size(&mut self, needed_size: usize) {
         while self.current_size + needed_size > self.config.max_size_bytes {
-            if let Some(oldest_key) = self.access_order.pop_front() {
-                if let Some(entry) = self.entries.remove(&oldest_key) {
+            // Find the key with the smallest access_id (least recently used)
+            let oldest_key = self.access_counter.iter()
+                .min_by_key(|(_, &access_id)| access_id)
+                .map(|(k, _)| k.clone());
+
+            if let Some(key) = oldest_key {
+                self.access_counter.remove(&key);
+                if let Some(entry) = self.entries.remove(&key) {
                     self.current_size = self.current_size.saturating_sub(entry.size_bytes);
                     self.stats.evictions += 1;
                 }
+            } else {
+                break;
             }
         }
     }

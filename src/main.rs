@@ -4,13 +4,10 @@
 //! materialized view operations with differential-dataflow support.
 //! NO REGULAR QUERY SUPPORT - ALL ACCESS THROUGH MATERIALIZED VIEWS
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 #[cfg(feature = "streaming")]
 use differential_dataflow::input::InputSession;
-#[cfg(feature = "streaming")]
-use timely::dataflow::scopes::Scope;
 
 use tracing::{error, info, Level};
 
@@ -19,16 +16,15 @@ use graph_core::{VertexId, Edge, props};
 use graph_storage::{GraphStorage, GraphOperation};
 
 // Random utilities
-#[cfg(feature = "views")]
-use rand;
+// rand is not a direct dependency - remove unused import
 
 #[cfg(feature = "views")]
 use graph_views::{
     MaterializedView, ViewType, RefreshPolicy, ViewSizeMetrics,
-    StorageIntegration, DataChangeEvent, ViewDataReader,
-    ViewRefreshListener, IntegratedViewManager, QueryRouter, QueryPattern,
-    MultiLevelCacheManager, MultiLevelCacheConfig, ViewCacheData,
-    IncrementalEngine, DataChange, ChangeSet, IncrementalConfig
+    StorageIntegration, IntegratedViewManager, QueryRouter, QueryPattern,
+    MultiLevelCacheManager, MultiLevelCacheConfig,
+    IncrementalEngine, DataChange, ChangeSet, IncrementalConfig,
+    ViewRegistry
 };
 
 /// Main graph database server
@@ -45,11 +41,12 @@ struct GraphDatabaseServer {
     #[cfg(feature = "views")]
     view_registry: Option<ViewRegistry>,
     #[cfg(feature = "streaming")]
-    vertices_input: InputSession<usize, (VertexId, HashMap<String, PropertyValue>), isize>,
+    vertices_input: InputSession<usize, VertexId, isize>,
     #[cfg(feature = "streaming")]
-    edges_input: InputSession<usize, (Edge, HashMap<String, PropertyValue>), isize>,
+    edges_input: InputSession<usize, Edge, isize>,
 }
 
+#[allow(dead_code)]
 impl GraphDatabaseServer {
     /// Create a new graph database server
     async fn new(storage_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
@@ -91,9 +88,11 @@ impl GraphDatabaseServer {
                 #[cfg(feature = "views")]
                 query_router,
                 #[cfg(feature = "views")]
-                cache_manager,
+                cache_manager: Some(cache_manager),
                 #[cfg(feature = "views")]
-                incremental_engine,
+                incremental_engine: Some(incremental_engine),
+                #[cfg(feature = "views")]
+                view_registry: None,
                 vertices_input,
                 edges_input,
             })
@@ -101,16 +100,18 @@ impl GraphDatabaseServer {
 
         #[cfg(not(feature = "streaming"))]
         {
-            Ok(Self { 
+            Ok(Self {
                 storage,
                 #[cfg(feature = "views")]
                 view_manager,
                 #[cfg(feature = "views")]
                 query_router,
                 #[cfg(feature = "views")]
-                cache_manager,
+                cache_manager: Some(cache_manager),
                 #[cfg(feature = "views")]
-                incremental_engine,
+                incremental_engine: Some(incremental_engine),
+                #[cfg(feature = "views")]
+                view_registry: None,
             })
         }
     }
@@ -454,7 +455,7 @@ impl GraphDatabaseServer {
                     }) {
                         Ok(vertices) => {
                             if !vertices.is_empty() {
-                                let mut transaction = self.storage.begin_transaction()?;
+                                let transaction = self.storage.begin_transaction()?;
                                 
                                 let vertex_count = vertices.len();
     for (id, _props) in &vertices {
@@ -482,9 +483,9 @@ impl GraphDatabaseServer {
     /// Show available materialized views
     async fn show_views(&self) -> Result<(), Box<dyn std::error::Error>> {
         match &self.view_manager {
-            Some(manager) => {
+            Some(_manager) => {
                 println!("📋 Available Materialized Views:");
-                
+
                 // Since we don't have a list_views method yet, show basic info
                 println!("   🎯 Views integration is enabled");
                 println!("   🔧 View manager initialized successfully");
@@ -669,7 +670,7 @@ impl GraphDatabaseServer {
 
     #[cfg(feature = "views")]
     /// Execute cache management operations
-    async fn execute_cache_operation(&self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
+    async fn execute_cache_operation(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
         let parts: Vec<&str> = input.split_whitespace().collect();
         
         if parts.len() < 2 {
@@ -750,8 +751,8 @@ impl GraphDatabaseServer {
 
     #[cfg(feature = "views")]
     /// Warm up cache with common query patterns
-    async fn warm_up_cache(&self) -> Result<(), Box<dyn std::error::Error>> {
-        match &self.query_router {
+    async fn warm_up_cache(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        match &mut self.query_router {
             Some(router) => {
                 println!("🔥 Warming up cache with common query patterns...");
                 
@@ -931,13 +932,16 @@ impl GraphDatabaseServer {
                 );
                 
                 // Add sample changes
-                let vertex_id = VertexId::new((rand::random::<u32>() % 1000) + 1);
+                let vertex_id = VertexId::new((std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64 % 1000) + 1);
                 changeset.add_change(DataChange::AddVertex {
                     id: vertex_id,
                     properties: std::collections::HashMap::from([
-                        ("name".to_string(), crate::graph_core::props::string("Batch User")),
-                        ("type".to_string(), crate::graph_core::props::string("Person")),
-                        ("batch_id".to_string(), crate::graph_core::props::int64(std::time::SystemTime::now()
+                        ("name".to_string(), props::string("Batch User")),
+                        ("type".to_string(), props::string("Person")),
+                        ("batch_id".to_string(), props::int64(std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_secs() as i64)),

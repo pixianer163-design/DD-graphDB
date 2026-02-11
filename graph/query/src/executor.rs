@@ -675,8 +675,8 @@ mod tests {
         props
     }
 
-    fn create_test_storage() -> Arc<GraphStorage> {
-        let temp_dir = std::env::temp_dir().join("query_test");
+    fn create_test_storage_named(name: &str) -> Arc<GraphStorage> {
+        let temp_dir = std::env::temp_dir().join(format!("query_test_{}", name));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
 
@@ -716,7 +716,7 @@ mod tests {
 
     #[test]
     fn test_query_executor_creation() {
-        let storage = create_test_storage();
+        let storage = create_test_storage_named("executor_creation");
         let _executor = QueryExecutor::new(storage);
         // Just verify it doesn't panic
     }
@@ -740,7 +740,7 @@ mod tests {
 
     #[test]
     fn test_property_filter_query() {
-        let storage = create_test_storage();
+        let storage = create_test_storage_named("prop_filter");
         let executor = QueryExecutor::new(storage);
 
         // MATCH (v:Person) WHERE v.age > 25 RETURN v.name, v.age
@@ -791,7 +791,7 @@ mod tests {
 
     #[test]
     fn test_edge_traversal_query() {
-        let storage = create_test_storage();
+        let storage = create_test_storage_named("edge_traversal");
         let executor = QueryExecutor::new(storage);
 
         // MATCH (a)-[e:friend]->(b) RETURN b.name

@@ -18,6 +18,7 @@ struct Edge {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 enum PropertyValue {
     String(String),
     Int64(i64),

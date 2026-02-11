@@ -224,32 +224,38 @@ impl MultiLevelCacheManager {
     pub fn get(&self, view_id: &str, query_hash: u64) -> Option<ViewCacheData> {
         let cache_key = format!("{}:{}", view_id, query_hash);
 
-        // Extract result first so the write guard is dropped before re-acquiring
-        let l1_result = self.l1_cache.write().unwrap().get(&cache_key);
-        if let Some(mut entry) = l1_result {
-            entry.access();
-            let data = entry.data.clone();
-            let size = entry.data.size_bytes();
-            self.l1_cache.write().unwrap().put(cache_key, entry, size);
-            return Some(data);
+        // Single lock acquisition per level: get, update access stats, put back
+        {
+            let mut l1 = self.l1_cache.write().unwrap();
+            if let Some(mut entry) = l1.get(&cache_key) {
+                entry.access();
+                let data = entry.data.clone();
+                let size = entry.data.size_bytes();
+                l1.put(cache_key, entry, size);
+                return Some(data);
+            }
         }
 
-        let l2_result = self.l2_cache.write().unwrap().get(&cache_key);
-        if let Some(mut entry) = l2_result {
-            entry.access();
-            let data = entry.data.clone();
-            let size = entry.data.size_bytes();
-            self.l2_cache.write().unwrap().put(cache_key, entry, size);
-            return Some(data);
+        {
+            let mut l2 = self.l2_cache.write().unwrap();
+            if let Some(mut entry) = l2.get(&cache_key) {
+                entry.access();
+                let data = entry.data.clone();
+                let size = entry.data.size_bytes();
+                l2.put(cache_key, entry, size);
+                return Some(data);
+            }
         }
 
-        let l3_result = self.l3_cache.write().unwrap().get(&cache_key);
-        if let Some(mut entry) = l3_result {
-            entry.access();
-            let data = entry.data.clone();
-            let size = entry.data.size_bytes();
-            self.l3_cache.write().unwrap().put(cache_key, entry, size);
-            return Some(data);
+        {
+            let mut l3 = self.l3_cache.write().unwrap();
+            if let Some(mut entry) = l3.get(&cache_key) {
+                entry.access();
+                let data = entry.data.clone();
+                let size = entry.data.size_bytes();
+                l3.put(cache_key, entry, size);
+                return Some(data);
+            }
         }
 
         None
